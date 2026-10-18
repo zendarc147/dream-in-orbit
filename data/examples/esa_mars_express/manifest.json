@@ -1,0 +1,256 @@
+{
+  "status": "public_development_examples_not_official_piscine_kit",
+  "retrieved_on": "2026-10-18",
+  "dataset": "ESA Mars Express Power Challenge, version 1.0.0",
+  "documentation_url": "https://kelvins.esa.int/mars-express-power-challenge/data/",
+  "record_url": "https://zenodo.org/records/6327379",
+  "archive_url": "https://zenodo.org/records/6327379/files/mars-express-power-3years.zip?download=1",
+  "archive_bytes": 153724228,
+  "archive_md5_as_published": "6ec708bfb25a124d8333f3e9f21a05a3",
+  "extraction": "Header and first 50 records of each of six CSVs from first public training period; independent prefixes, not an aligned time window. Full archive checksum not verified: only byte ranges downloaded.",
+  "files": [
+    {
+      "file": "dmop.csv",
+      "source_member": "mars-express-power-3years/train_set/context--2008-08-22_2010-07-10--dmop.csv",
+      "rows": 50,
+      "columns": [
+        "ut_ms",
+        "subsystem"
+      ],
+      "first_row": [
+        "1219363211000",
+        "AXXX301A"
+      ],
+      "last_row": [
+        "1219370416000",
+        "APSF50A2"
+      ],
+      "sha256": "0a21c7d46638b56b0c777e41ab4f7e4c828f7ceb7c3a1860beaa63c93c7e1154"
+    },
+    {
+      "file": "evtf.csv",
+      "source_member": "mars-express-power-3years/train_set/context--2008-08-22_2010-07-10--evtf.csv",
+      "rows": 50,
+      "columns": [
+        "ut_ms",
+        "description"
+      ],
+      "first_row": [
+        "1219364253000",
+        "MLG_LOS_05_/_RTLT_02373"
+      ],
+      "last_row": [
+        "1219395566000",
+        "MAR_PENUMBRA_START"
+      ],
+      "sha256": "5f0c0eac5d5d46d642419ee088f1e7cc4c63afef1fc5d4b8b04724f1a6c1e919"
+    },
+    {
+      "file": "ftl.csv",
+      "source_member": "mars-express-power-3years/train_set/context--2008-08-22_2010-07-10--ftl.csv",
+      "rows": 50,
+      "columns": [
+        "utb_ms",
+        "ute_ms",
+        "type",
+        "flagcomms"
+      ],
+      "first_row": [
+        "1219363213000",
+        "1219365494000",
+        "EARTH",
+        "FALSE"
+      ],
+      "last_row": [
+        "1219517483000",
+        "1219518109000",
+        "SLEW",
+        "FALSE"
+      ],
+      "sha256": "851bd20c9278a03442fdf9391fcac5d0ef15e3e9cfcb93a5dfe59e84b9a0568d"
+    },
+    {
+      "file": "ltdata.csv",
+      "source_member": "mars-express-power-3years/train_set/context--2008-08-22_2010-07-10--ltdata.csv",
+      "rows": 50,
+      "columns": [
+        "ut_ms",
+        "sunmars_km",
+        "earthmars_km",
+        "sunmarsearthangle_deg",
+        "solarconstantmars",
+        "eclipseduration_min",
+        "occultationduration_min"
+      ],
+      "first_row": [
+        "1219363200000",
+        "241938908.363002",
+        "355756044.048925",
+        "19.5650758165222",
+        "522.263999026823",
+        "4.16666666666667",
+        "27.4"
+      ],
+      "last_row": [
+        "1223596800000",
+        "233997608.272687",
+        "372881901.987969",
+        "10.6856250021982",
+        "558.314216451693",
+        "0",
+        "0"
+      ],
+      "sha256": "dd4c1947e02972ad6b74c566b81052d8174786c03c72a2deb350bc195bad2870"
+    },
+    {
+      "file": "power.csv",
+      "source_member": "mars-express-power-3years/train_set/power--2008-08-22_2010-07-10.csv",
+      "rows": 50,
+      "columns": [
+        "ut_ms",
+        "NPWD2372",
+        "NPWD2401",
+        "NPWD2402",
+        "NPWD2451",
+        "NPWD2471",
+        "NPWD2472",
+        "NPWD2481",
+        "NPWD2482",
+        "NPWD2491",
+        "NPWD2501",
+        "NPWD2531",
+        "NPWD2532",
+        "NPWD2551",
+        "NPWD2552",
+        "NPWD2561",
+        "NPWD2562",
+        "NPWD2691",
+        "NPWD2692",
+        "NPWD2721",
+        "NPWD2722",
+        "NPWD2742",
+        "NPWD2771",
+        "NPWD2791",
+        "NPWD2792",
+        "NPWD2801",
+        "NPWD2802",
+        "NPWD2821",
+        "NPWD2851",
+        "NPWD2852",
+        "NPWD2871",
+        "NPWD2872",
+        "NPWD2881",
+        "NPWD2882"
+      ],
+      "first_row": [
+        "1219363209542",
+        "0.001821",
+        "0.00147389",
+        "0.172173",
+        "0.0050155",
+        "7.14286E-4",
+        "6.25625E-4",
+        "6.65333E-4",
+        "0.001827",
+        "0.00201611",
+        "0.00502773",
+        "0.081041",
+        "1.17344",
+        "6.006E-4",
+        "0.0038375",
+        "0.739237",
+        "0.423223",
+        "2.66667E-6",
+        "5.54444E-4",
+        "0.164957",
+        "0.171473",
+        "0.00210519",
+        "0.181243",
+        "0.174111",
+        "5.53333E-4",
+        "0.00147389",
+        "0.156296",
+        "0.00554722",
+        "0.004982",
+        "5.015E-4",
+        "3.988E-4",
+        "7.14286E-4",
+        "0.00645687",
+        "0.0032275"
+      ],
+      "last_row": [
+        "1219364777537",
+        "0.373872",
+        "0.00176867",
+        "0.17744",
+        "2.1957",
+        "8.57143E-4",
+        "7.5075E-4",
+        "5.54444E-4",
+        "0.001827",
+        "0.00241933",
+        "0.00502773",
+        "0.641293",
+        "1.51127",
+        "5.005E-4",
+        "0.0038375",
+        "0.739237",
+        "0.417912",
+        "2.66667E-6",
+        "5.54444E-4",
+        "0.164957",
+        "0.171473",
+        "0.00226713",
+        "0.181243",
+        "0.179387",
+        "6.64E-4",
+        "0.00147389",
+        "0.161594",
+        "0.00554722",
+        "0.004982",
+        "6.018E-4",
+        "4.985E-4",
+        "7.14286E-4",
+        "0.00645687",
+        "0.0032275"
+      ],
+      "sha256": "863a7816683d2a19cb54587161ca39ae4cf34ea5f7d0b91785764d5807561a27"
+    },
+    {
+      "file": "saaf.csv",
+      "source_member": "mars-express-power-3years/train_set/context--2008-08-22_2010-07-10--saaf.csv",
+      "rows": 50,
+      "columns": [
+        "ut_ms",
+        "sa",
+        "sx",
+        "sy",
+        "sz"
+      ],
+      "first_row": [
+        "1219363213000",
+        "0.32",
+        "14.55",
+        "90.32",
+        "104.55"
+      ],
+      "last_row": [
+        "1219366055000",
+        "0.34",
+        "14.55",
+        "90.34",
+        "104.55"
+      ],
+      "sha256": "b8077f3f52043c31ce4be1b31fcade82191153d613de0639238c25bbab708d09"
+    }
+  ],
+  "creators": [
+    "Marcus Märtens (European Space Agency)",
+    "Dario Izzo (European Space Agency)"
+  ],
+  "license": {
+    "id": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "modifications": "Only the header and first 50 data rows are retained; filenames shortened. Values unchanged."
+}
