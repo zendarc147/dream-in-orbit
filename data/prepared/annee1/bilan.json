@@ -1,0 +1,70 @@
+{
+  "X_dimensions_csv": [
+    16488,
+    66
+  ],
+  "X_debut_ms": 1219363200000,
+  "X_fin_ms": 1278716400000,
+  "X_cellules_remplies": 0,
+  "X_manquants_avant_remplissage": {},
+  "X_manquants_apres_remplissage": 0,
+  "X_infinis": 0,
+  "X_timestamps_dupliques": 0,
+  "sources": {
+    "dmop": {
+      "lignes": 187126,
+      "cellules_manquantes": 0,
+      "doublons_ligne": 0,
+      "timestamps_repetes": 0,
+      "debut_ms": 1219363211000,
+      "fin_ms": 1278719847000
+    },
+    "evtf": {
+      "lignes": 76776,
+      "cellules_manquantes": 0,
+      "doublons_ligne": 0,
+      "timestamps_repetes": 68,
+      "debut_ms": 1219364253000,
+      "fin_ms": 1278717961000
+    },
+    "ftl": {
+      "lignes": 19571,
+      "cellules_manquantes": 0,
+      "doublons_ligne": 0,
+      "timestamps_repetes": 0,
+      "debut_ms": 1219363213000,
+      "fin_ms": 1278718460000
+    },
+    "saaf": {
+      "lignes": 1261290,
+      "cellules_manquantes": 0,
+      "doublons_ligne": 0,
+      "timestamps_repetes": 0,
+      "debut_ms": 1219363213000,
+      "fin_ms": 1278719990000
+    },
+    "ltdata": {
+      "lignes": 687,
+      "cellules_manquantes": 0,
+      "doublons_ligne": 0,
+      "timestamps_repetes": 0,
+      "debut_ms": 1219363200000,
+      "fin_ms": 1278633600000
+    }
+  },
+  "evtf_paires_anormales": {
+    "OCC_MARS_200KM": 0,
+    "OCC_MARS": 0,
+    "MAR_PENUMBRA": 0,
+    "MAR_UMBRA": 0
+  },
+  "cibles": {
+    "fichier": "y.csv",
+    "dimensions_csv": [
+      16488,
+      34
+    ],
+    "heures_sans_courant": 32,
+    "cellules_inconnues": 1056
+  }
+}
