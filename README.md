@@ -13,7 +13,8 @@ Scores et historique des essais : `RESULTATS.md`. Ablations : `ABLATIONS.md`.
 | Constante | 0.1058 | 0.1252 | 0.1155 |
 | Gradient boosting + recalage sur power_init (`baselines/`) | 0.0951 | 0.0999 | 0.0975 |
 | World model GRU, ensemble de 5 graines (v1 + bruit) | 0.0872 | 0.0971 | 0.0921 |
-| **Ensemble mixte de world models GRU (v1 + bruit, v2r ; 2 × 5 graines), modèle final** | **0.0863** | **0.0964** | **0.0914** |
+| Ensemble mixte de world models GRU (v1 + bruit, v2r ; 2 × 5 graines) | 0.0863 | 0.0964 | 0.0914 |
+| **+ 600 pas avec moyenne exponentielle des poids + correction de niveau de power_init à demi-vie apprise, modèle final** | **0.0853** | **0.0940** | **0.0897** |
 
 Démo : `demo/reve_contre_realite.png` (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
@@ -54,7 +55,9 @@ python train.py
 
 Entraîne l'ensemble final sur annee1 + annee2 et écrit `poids/`. Les données horaires
 sont lues dans `data/prepared/` ; si elles manquent, `prepare.py` les recrée à partir
-de `data/annee*/` (qui doit alors contenir `power.csv`).
+de `data/annee*/` (qui doit alors contenir `power.csv`). Les deux années se suivent
+sans trou : elles forment une seule période, et les épisodes d'entraînement peuvent
+traverser la frontière annee1/annee2.
 
 Sur CPU l'entraînement complet est long ; sur un GPU T4 (Colab), il tient en moins
 d'une heure : le code utilise automatiquement CUDA s'il est disponible.
@@ -98,7 +101,7 @@ python -m unittest test_prepare baselines.test_ridge test_predict
 |---|---|
 | `prepare.py` | contextes bruts → 65 variables horaires (schéma appris sur annee1) |
 | `variables.py` | variables v2 : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin |
-| `monde.py` | world model GRU (encodeur sur power_init → h0, simulateur 2 couches, tête 33 circuits) |
+| `monde.py` | world model GRU (encodeur sur power_init → h0, simulateur 2 couches, tête 33 circuits, correction de niveau de power_init qui s'estompe avec une demi-vie apprise) |
 | `mixte.py` | modèle final : moyenne de deux ensembles de world models (variables v1 et v2r) |
 | `dmop_etats.py` | état « dernière commande » des sous-systèmes dmop (testé, non retenu) |
 | `donnees.py` | chargement des années préparées et des dossiers de test |

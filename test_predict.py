@@ -8,7 +8,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
+import monde
 import variables
 
 RACINE = Path(__file__).resolve().parent
@@ -32,6 +34,24 @@ class VariablesTest(unittest.TestCase):
         self.assertFalse([n for n in noms if "UMBRA" in n or "OCC_MARS" in n or "eclipse" in n])
         _, tous = variables.construire(x, "v2")
         self.assertGreater(len(tous), len(noms))
+
+
+class MondeTest(unittest.TestCase):
+    def test_simulation_par_morceaux_identique_a_la_simulation_complete(self):
+        """Entraînement (morceaux + marges du regard + heure de début de la correction de
+        niveau) et prédiction (une seule passe) doivent voir exactement le même calcul."""
+        torch.manual_seed(0)
+        modele = monde.MondeGRU(5, 3, 8, 2, 0.0, conv=4, niveau=True).eval()
+        with torch.no_grad():
+            modele.poids_niveau.fill_(0.5)
+        x, y_init, ti, morceau = torch.randn(1, 130, 5), torch.randn(1, 24, 6), 24, 40
+        complet = modele(x[:, :ti], y_init, monde.etendre(x, modele.marge)[:, ti:])
+        long = monde.etendre(x, modele.marge)
+        h, resume, sorties = modele.etat_initial(x[:, :ti], y_init), modele.resume_init(y_init), []
+        for a in range(0, 130 - ti, morceau):
+            sortie, h = modele.simuler(long[:, ti + a:ti + a + morceau + 2 * modele.marge], h, resume, a)
+            sorties.append(sortie)
+        torch.testing.assert_close(torch.cat(sorties, dim=1), complet)
 
 
 @unittest.skipUnless((RACINE / "poids/modele.json").is_file() and (VALIDATION / "test").is_dir(),
