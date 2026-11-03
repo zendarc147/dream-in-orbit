@@ -3,8 +3,9 @@ import importlib
 
 MODELES = {
     "boosting": "baselines.boosting",
+    "gru": "monde",
 }
-FINAL = "boosting"
+FINAL = "gru"
 
 
 def module(nom):

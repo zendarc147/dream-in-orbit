@@ -24,3 +24,20 @@ E1 : cible < 0.095 manquée de peu après 3 essais (0.0951 en directe). Constat 
 recalage constant sur toute l'année dégrade l'inverse (0.139 avec poids 1) ; le niveau
 des 7 premiers jours ne vaut que pour quelques semaines. Les modèles plus simples
 généralisent mieux d'une année à l'autre.
+
+| Étape | Changement | RMSE directe | RMSE inverse | Moyenne | Durée (train + predict, par direction, CPU 4 cœurs) |
+|---|---|---:|---:|---:|---|
+| E2 | GRU selon le plan : fenêtres 7 j + 60 j, 400 pas (inverse non mesurée) | 0.1148 | – | – | 680 s + 6 s |
+| E2 | + épisodes d'un an, BPTT tronquée par 30 j, entrées bornées à la plage d'entraînement | 0.1094 | – | – | 485 s + 7 s |
+| E2 | 60 / 150 pas ; sans ltdata ; plus régularisé (taille 64, dropout 0.3) | 0.107 à 0.133 | – | – | – |
+| **E2** | **+ variables quasi constantes écartées (mode ≥ 99,5 %), z-scores bornés à ±5, 300 pas (retenu)** | **0.0901** | **0.0989** | **0.0945** | 250 s + 7 s |
+
+E2 : diagnostic de l'échec initial. L'erreur montait au fil de l'année (0.075 sur les
+premières semaines, 0.14 à 0.17 en fin de période). Un MLP sans mémoire faisait pire (0.156) :
+le problème venait donc des entrées, pas de la récurrence. Cause : 17 variables presque
+constantes sur annee1 (`saaf_coverage_fraction`, `saaf_missing`, `*_unknown`, `*_outside_recorded_range`…)
+avaient un écart-type minuscule ; dès qu'elles bougent sur annee2 (61 % des heures pour la
+couverture saaf), les entrées normalisées explosent. Après filtrage, 48 variables sur 65 restent.
+Écart au plan : les fenêtres de 60 jours sont remplacées par des épisodes d'un an coupés en
+morceaux de 30 jours (l'état caché passe d'un morceau à l'autre). Le simulateur s'entraîne
+ainsi sur l'horizon réel de la simulation.
