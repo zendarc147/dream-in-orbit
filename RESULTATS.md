@@ -79,3 +79,19 @@ sous le bruit de graine.
 
 Modèle final (`poids/`) : même configuration, entraîné sur annee1 + annee2. Entraînement
 717 s sur CPU 4 cœurs ; prédiction 10 s ; poids 3,4 Mo.
+| It. 4 | Spécialiste 2551 + 2451 (perte sur ces 2 circuits seulement) remplaçant le généraliste sur ces colonnes | 0.0877 | 0.0985 | 0.0931 | +1030 s |
+| **It. 5** | **Ensemble mixte global : moyenne à poids égal (tous circuits) de l'ensemble v1 + bruit et de l'ensemble v2r (retenu, final)** | **0.0863** | **0.0964** | **0.0914** | 2 × train + 18 s |
+| It. 6 | + 3e membre (v1 sans bruit) | 0.0864 | 0.0963 | 0.0913 | non retenu : gain 0.00005 pour +50 % d'entraînement |
+| It. 7 | 2531, 2851, 2881, 2561 remplacés par leur moyenne sur power_init | 0.0816 | 0.1275 | 0.1046 | non retenu |
+
+Itérations sur 2551 et 2451. Le spécialiste fait moins bien que le généraliste sur ses
+propres circuits (2551 : 0.280 contre 0.277 en directe) : apprendre les 33 circuits
+ensemble aide. Le mélange v1/v2r améliore surtout 2551 (0.277 → 0.271 en directe,
+0.236 → 0.228 en inverse). Il est appliqué globalement, avec le même poids pour chaque
+circuit, et améliore les deux directions (directe 0.0872 → 0.0863, inverse 0.0971 → 0.0964).
+La persistance du niveau initial aide en directe mais ruine l'inverse.
+
+Modèle final (`poids/`, `mixte.py`) : 2 membres × 5 graines, entraînés sur annee1 + annee2.
+Entraînement 2640 s sur CPU 4 cœurs (ralenti par des tâches concurrentes ; ≈ 25 min seul).
+Prédiction 18 s. Poids : 7 Mo. Temps sur GPU T4 non mesuré (pas de GPU ici) ; sur Colab,
+`python train.py` utilise CUDA automatiquement, à lancer par toi pour vérifier.

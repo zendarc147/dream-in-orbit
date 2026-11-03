@@ -36,6 +36,7 @@ CONFIG_DEFAUT = {
     "sans": [],              # groupes de variables retirés (ablations)
     "memoire": True,         # False : ni encodeur ni récurrence (ablation)
     "statique": False,       # donner à chaque heure le niveau moyen des circuits sur power_init
+    "cibles": None,          # circuits portés par la perte (None : les 33) ; sert aux spécialistes
     "bruit": 0.3,            # écart-type du bruit gaussien ajouté aux entrées normalisées (entraînement)
     "taille": 128,
     "couches": 2,
@@ -161,6 +162,9 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
     plan = torch.optim.lr_scheduler.OneCycleLR(optim, max_lr=config["lr"], total_steps=config["pas"],
                                                pct_start=0.1)
     debut, cumul, pas = time.time(), 0.0, 0
+    colonnes = torch.ones(n_circuits, dtype=torch.bool, device=appareil)
+    if config.get("cibles"):
+        colonnes = torch.as_tensor([c in config["cibles"] for c in config["_circuits"]], device=appareil)
     modele.train()
     while pas < config["pas"]:
         # Épisode : longueur commune au lot, bornée par la plus courte période.
@@ -192,7 +196,7 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
                 h = h.detach()
             sortie, h = modele.simuler(x[:, ti + a:ti + a + morceau], h, resume)
             c = cible[:, a:a + morceau]
-            masque = torch.isfinite(c)
+            masque = torch.isfinite(c) & colonnes
             if not masque.any():
                 continue
             perte = ((sortie - torch.nan_to_num(c)) ** 2)[masque].mean()
@@ -221,6 +225,7 @@ def entrainer(annees, dossier, **options):
     config = {**CONFIG_DEFAUT, **options}
     torch.set_num_threads(int(os.environ.get("MONDE_THREADS", config["threads"])))
     schema, periodes, noms, vocabulaire = preparer_annees(annees, config)
+    config["_circuits"] = schema["target_columns"]
     f_tout = np.concatenate([f for f, _ in periodes])
     y_tout = np.concatenate([y for _, y in periodes])
     stats = calculer_stats(f_tout, y_tout)
