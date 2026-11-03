@@ -16,20 +16,26 @@ Chaque variable est bornée à sa plage d'entraînement : pas d'extrapolation ho
 Plusieurs graines forment un ensemble : moyenne = prédiction, écart-type = incertitude.
 """
 import json
+import multiprocessing
+import os
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import torch
 from torch import nn
 
+import dmop_etats
 import donnees
 import variables
 
 CONFIG_DEFAUT = {
     "variables": "v1",       # jeu de variables d'entrée (voir variables.py)
+    "etats_dmop": False,     # ajouter l'état « dernière commande » des sous-systèmes dmop
     "sans": [],              # groupes de variables retirés (ablations)
     "memoire": True,         # False : ni encodeur ni récurrence (ablation)
+    "statique": False,       # donner à chaque heure le niveau moyen des circuits sur power_init
     "taille": 128,
     "couches": 2,
     "dropout": 0.1,
@@ -40,7 +46,7 @@ CONFIG_DEFAUT = {
     "pas": 300,
     "lr": 3e-3,
     "weight_decay": 1e-4,
-    "graines": [0],
+    "graines": [0, 1, 2, 3, 4],
     "threads": 4,
 }
 H_JOUR = 24
@@ -71,11 +77,15 @@ def calculer_stats(f_tout, y_tout):
 
 
 class MondeGRU(nn.Module):
-    def __init__(self, n_entrees, n_circuits, taille, couches, dropout, memoire=True):
+    def __init__(self, n_entrees, n_circuits, taille, couches, dropout, memoire=True, statique=False):
         super().__init__()
         self.memoire = memoire
+        self.statique = statique and memoire
         self.couches, self.taille = couches, taille
-        self.projection = nn.Sequential(nn.Linear(n_entrees, taille), nn.GELU())
+        # Avec « statique », le niveau moyen de chaque circuit sur power_init (et la part
+        # d'heures connues) accompagne le contexte à chaque heure : il ne s'efface pas.
+        entree = n_entrees + (2 * n_circuits if self.statique else 0)
+        self.projection = nn.Sequential(nn.Linear(entree, taille), nn.GELU())
         if memoire:
             # L'encodeur voit le contexte, les courants normalisés et leur masque de présence.
             self.encodeur = nn.GRU(n_entrees + 2 * n_circuits, taille, batch_first=True)
@@ -95,8 +105,18 @@ class MondeGRU(nn.Module):
         h0 = torch.tanh(self.vers_h0(h[-1]))
         return h0.view(-1, self.couches, self.taille).transpose(0, 1).contiguous()
 
-    def simuler(self, x_sim, h):
+    @staticmethod
+    def resume_init(y_init):
+        """Moyenne normalisée de chaque circuit sur les heures connues + part d'heures connues."""
+        n = y_init.shape[-1] // 2
+        valeurs, masque = y_init[..., :n], y_init[..., n:]
+        comptes = masque.sum(dim=1)
+        return torch.cat([valeurs.sum(dim=1) / comptes.clamp(min=1), comptes / y_init.shape[1]], dim=-1)
+
+    def simuler(self, x_sim, h, resume=None):
         """Avancer sur le contexte seul : retourne (courants (B, Ts, C), état final)."""
+        if self.statique:
+            x_sim = torch.cat([x_sim, resume[:, None].expand(-1, x_sim.shape[1], -1)], dim=-1)
         z = self.projection(x_sim)
         if not self.memoire:
             return self.tete(self.simulateur(z)), None
@@ -104,7 +124,7 @@ class MondeGRU(nn.Module):
         return self.tete(sortie), h
 
     def forward(self, x_init, y_init, x_sim):
-        return self.simuler(x_sim, self.etat_initial(x_init, y_init))[0]
+        return self.simuler(x_sim, self.etat_initial(x_init, y_init), self.resume_init(y_init))[0]
 
 
 def normaliser_courants(y, moyenne, ecart):
@@ -116,12 +136,14 @@ def normaliser_courants(y, moyenne, ecart):
 
 def preparer_annees(annees, config):
     schema = donnees.charger_schema()
+    tables = {annee: donnees.lire_dmop(annee) for annee in annees}
+    vocabulaire = dmop_etats.apprendre_vocabulaire(list(tables.values())) if config["etats_dmop"] else None
     periodes = []
     for annee in annees:
         _, x, y = donnees.charger_annee(annee, schema)
-        f, noms = variables.construire(x, config["variables"], config["sans"])
+        f, noms = variables.construire(x, config["variables"], config["sans"], tables[annee], vocabulaire)
         periodes.append((f, y))
-    return schema, periodes, noms
+    return schema, periodes, noms, vocabulaire
 
 
 def entrainer_un(periodes, stats, config, graine, n_circuits):
@@ -131,7 +153,7 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
     morceau = config["morceau_h"] or ts
     appareil = APPAREIL
     modele = MondeGRU(int(stats["garder"].sum()), n_circuits, config["taille"], config["couches"],
-                      config["dropout"], config["memoire"]).to(appareil)
+                      config["dropout"], config["memoire"], config.get("statique", False)).to(appareil)
     with torch.no_grad():
         modele.tete.bias.copy_(torch.as_tensor(stats["y_moyenne"], dtype=torch.float32))
     optim = torch.optim.AdamW(modele.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
@@ -161,9 +183,10 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
                 break
             if a == 0:
                 h = modele.etat_initial(x[:, :ti], y_init)
+                resume = modele.resume_init(y_init)
             elif h is not None:
                 h = h.detach()
-            sortie, h = modele.simuler(x[:, ti + a:ti + a + morceau], h)
+            sortie, h = modele.simuler(x[:, ti + a:ti + a + morceau], h, resume)
             c = cible[:, a:a + morceau]
             masque = torch.isfinite(c)
             if not masque.any():
@@ -182,21 +205,38 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
     return modele.cpu()
 
 
+def _entrainer_graine(arguments):
+    """Travailleur d'un processus : une graine, un thread (le GRU passe mal à l'échelle en threads)."""
+    periodes, stats, config, graine, n_circuits = arguments
+    torch.set_num_threads(1)
+    modele = entrainer_un(periodes, stats, config, graine, n_circuits)
+    return {k: v.half() for k, v in modele.state_dict().items()}
+
+
 def entrainer(annees, dossier, **options):
     config = {**CONFIG_DEFAUT, **options}
-    torch.set_num_threads(config["threads"])
-    schema, periodes, noms = preparer_annees(annees, config)
+    torch.set_num_threads(int(os.environ.get("MONDE_THREADS", config["threads"])))
+    schema, periodes, noms, vocabulaire = preparer_annees(annees, config)
     f_tout = np.concatenate([f for f, _ in periodes])
     y_tout = np.concatenate([y for _, y in periodes])
     stats = calculer_stats(f_tout, y_tout)
     dossier = Path(dossier)
     dossier.mkdir(parents=True, exist_ok=True)
-    etats = []
-    for graine in config["graines"]:
-        modele = entrainer_un(periodes, stats, config, graine, len(schema["target_columns"]))
-        etats.append({k: v.half() for k, v in modele.state_dict().items()})
+    n_circuits = len(schema["target_columns"])
+    processus = min(len(config["graines"]), int(os.environ.get("MONDE_PROCESSUS", os.cpu_count() or 1)))
+    if APPAREIL == "cpu" and processus > 1:
+        # Sur CPU, plusieurs graines en parallèle (un processus mono-thread chacune).
+        contexte = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(processus, mp_context=contexte) as pool:
+            etats = list(pool.map(_entrainer_graine,
+                                  [(periodes, stats, config, g, n_circuits) for g in config["graines"]]))
+    else:
+        etats = []
+        for graine in config["graines"]:
+            modele = entrainer_un(periodes, stats, config, graine, n_circuits)
+            etats.append({k: v.half() for k, v in modele.state_dict().items()})
     torch.save({
-        "config": config, "variables": noms, "circuits": schema["target_columns"], "annees": list(annees),
+        "config": config, "variables": noms, "vocabulaire": vocabulaire, "circuits": schema["target_columns"], "annees": list(annees),
         "stats": {k: torch.as_tensor(v) for k, v in stats.items()}, "etats": etats,
     }, dossier / "monde.pt")
     print(f"{len(etats)} world model(s) entraîné(s) sur {', '.join(annees)}")
@@ -209,18 +249,20 @@ def charger(dossier):
     modeles = []
     for etat in paquet["etats"]:
         modele = MondeGRU(int(stats["garder"].sum()), len(paquet["circuits"]), config["taille"],
-                          config["couches"], config["dropout"], config["memoire"])
+                          config["couches"], config["dropout"], config["memoire"],
+                          config.get("statique", False))
         modele.load_state_dict({k: v.float() for k, v in etat.items()})
         modeles.append(modele.eval())
     return paquet, config, stats, modeles
 
 
 @torch.no_grad()
-def simuler(dossier, x_df, y_init, n_init):
+def simuler(dossier, x_df, y_init, n_init, dmop=None):
     """Retourner (moyenne, écart-type) de l'ensemble sur toute la grille (heures init comprises)."""
     paquet, config, stats, modeles = charger(dossier)
     torch.set_num_threads(config["threads"])
-    f, noms = variables.construire(x_df, config["variables"], config["sans"])
+    f, noms = variables.construire(x_df, config["variables"], config["sans"], dmop,
+                                   paquet.get("vocabulaire"))
     if noms != paquet["variables"]:
         raise ValueError("Variables différentes de celles de l'entraînement")
     x = torch.as_tensor(normaliser_entrees(f, stats)[None], dtype=torch.float32)
@@ -237,7 +279,7 @@ def simuler(dossier, x_df, y_init, n_init):
 def predire(test_dir, out, dossier, sortie_incertitude=None):
     paquet = torch.load(Path(dossier) / "monde.pt", weights_only=True)
     test = donnees.lire_dossier_test(test_dir)
-    moyenne, ecart = simuler(dossier, test["X"], test["y_init"], test["n_init"])
+    moyenne, ecart = simuler(dossier, test["X"], test["y_init"], test["n_init"], test["dmop"])
     table = donnees.ecrire_predictions(test["heures"], moyenne, test["heures_a_predire"], paquet["circuits"], out)
     if sortie_incertitude:
         donnees.ecrire_predictions(test["heures"], ecart, test["heures_a_predire"], paquet["circuits"],

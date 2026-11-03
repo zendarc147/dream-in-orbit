@@ -64,7 +64,16 @@ def lire_dossier_test(test_dir, schema=None):
         "y_init": y,
         "n_init": len(y_init),
         "heures_a_predire": a_predire.to_numpy(),
+        "dmop": tables["dmop"],
     }
+
+
+def lire_dmop(annee):
+    """Table dmop brute d'une période du kit (pour l'état des sous-systèmes)."""
+    table = pd.read_csv(RACINE / "data" / annee / "dmop.csv")
+    if table.columns.tolist() != prepare.COLONNES["dmop"]:
+        raise ValueError(f"{annee}/dmop.csv : colonnes inattendues")
+    return table
 
 
 def ecrire_predictions(heures, valeurs, heures_a_predire, circuits, out):

@@ -41,3 +41,25 @@ couverture saaf), les entrées normalisées explosent. Après filtrage, 48 varia
 Écart au plan : les fenêtres de 60 jours sont remplacées par des épisodes d'un an coupés en
 morceaux de 30 jours (l'état caché passe d'un morceau à l'autre). Le simulateur s'entraîne
 ainsi sur l'horizon réel de la simulation.
+
+| Étape | Changement | RMSE directe | RMSE inverse | Moyenne | Durée |
+|---|---|---:|---:|---:|---|
+| E2 | Même config, graine 1 (mesure du bruit de graine : ≈ 0.0015 sur la moyenne) | 0.0878 | 0.0982 | 0.0930 | 420 s + 7 s |
+| E3 | Variables v2 complètes (399 : fenêtres 3/6/12/24 h passées et futures sur éclipses, comms, 14 modes ftl, 12 comptes dmop ; depuis/jusqu'à ; phase orbitale ; cos/sin saaf) | 0.0990 | 0.1061 | 0.1025 | 450 s + 7 s |
+| E3 | v1 + état « dernière commande » des 12 sous-systèmes dmop (136 variables) | 0.0973 | – | – | – |
+| E3 | v2 réduite (v2r) : fenêtres et depuis/jusqu'à seulement sur éclipses + comms, phase orbitale, cos/sin saaf | 0.0878 | 0.0987 | 0.0933 | 330 s + 7 s |
+
+E3 : avec une seule trajectoire annuelle pour apprendre, ajouter beaucoup de variables
+fait surapprendre (v2 complète : +0.008). L'état des sous-systèmes dmop corrèle à 0.75
+avec NPWD2551 sur annee1 (AXXX301A) mais dégrade la validation directe : relation
+propre à une année. Seule la version réduite reste au niveau de v1.
+| E3 | Ensemble de 5 graines, variables v1 (moyenne = prédiction, écart-type = incertitude) | 0.0876 | 0.0975 | **0.0925** | 950 s (2 directions en parallèle) + 10 s |
+| E3 | Ensemble de 5 graines, variables v2r | 0.0877 | 0.0980 | 0.0928 | 1070 s + 10 s |
+
+Entraînement CPU : quatre processus mono-thread (un par graine) donnent 2,5 fois le débit
+d'un processus à 4 threads ; `valider.py` lance aussi les deux directions en parallèle.
+
+Analyse de l'ensemble v1 : 2551 et 2451 font 52 % de l'erreur en directe, 34 % en inverse.
+Plusieurs circuits sont prédits plus mal qu'une constante à leur vraie moyenne : 2531
+(RMSE 0.167 pour un écart-type de 0.081 en directe), 2851, 2881 et 2561. Leur niveau change
+d'une année à l'autre (2531 : moyenne 0.125 sur annee1, 0.013 sur annee2).

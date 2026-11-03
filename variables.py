@@ -4,10 +4,15 @@ v1 : les 65 variables de prepare.py telles quelles.
 v2 : v1 + fenêtres glissantes passées ET futures (le planning est connu d'avance)
      sur éclipses, communications, modes ftl et commandes dmop ; heures depuis le
      dernier et jusqu'au prochain événement ; phase orbitale ; cos/sin des angles saaf.
-Les groupes peuvent être retirés pour les ablations : eclipses, saaf, dmop, ftl, ltdata.
+v2r : v2 réduite aux éclipses et communications (fenêtres, depuis/jusqu'à), phase
+      orbitale et cos/sin saaf.
+Option etats_dmop : état « dernière commande » de chaque sous-système (dmop_etats.py).
+Les groupes peuvent être retirés pour les ablations : eclipses, saaf, dmop, ftl, ltdata, orbite.
 """
 import numpy as np
 import pandas as pd
+
+import dmop_etats
 
 FENETRES = (3, 6, 12, 24)  # la fenêtre de 1 h est la valeur horaire elle-même (déjà dans v1)
 PLAFOND_H = 72             # au-delà, « depuis/jusqu'à » est plafonné
@@ -15,7 +20,7 @@ PLAFOND_H = 72             # au-delà, « depuis/jusqu'à » est plafonné
 GROUPES = {
     "eclipses": ("evtf_OCC", "evtf_MAR_", "ltdata_eclipseduration", "ltdata_occultationduration", "ecl_"),
     "saaf": ("saaf_",),
-    "dmop": ("dmop_",),
+    "dmop": ("dmop_", "dmopetat_"),
     "ftl": ("ftl_",),
     "ltdata": ("ltdata_",),
     "orbite": ("evtf_PERICENTRE", "evtf_APOCENTRE", "orbite_"),
@@ -47,18 +52,20 @@ def heures_depuis_jusqua(actif):
     return np.minimum(t - dernier, PLAFOND_H), np.minimum(prochain - t, PLAFOND_H)
 
 
-def series_a_fenetrer(x):
+def series_a_fenetrer(x, reduite=False):
     noms = [c for c in x.columns if c.startswith(("evtf_OCC", "evtf_MAR_")) and c.endswith("_minutes")]
     noms += ["ftl_comms_minutes"]
+    if reduite:
+        return noms
     noms += [c for c in x.columns if c.startswith("ftl_") and c.endswith("_minutes")
              and c not in ("ftl_comms_minutes", "ftl_coverage_minutes", "ftl_overlap_minutes")]
     noms += [c for c in x.columns if c.startswith("dmop_") and c.endswith("_count")]
     return noms
 
 
-def ajouter_v2(x):
+def ajouter_v2(x, reduite=False):
     nouvelles = {}
-    for nom in series_a_fenetrer(x):
+    for nom in series_a_fenetrer(x, reduite):
         serie = x[nom].to_numpy(dtype=np.float64)
         for w in FENETRES:
             passe, futur = sommes_glissantes(serie, w)
@@ -81,14 +88,21 @@ def ajouter_v2(x):
     return pd.concat([x, pd.DataFrame(nouvelles, index=x.index)], axis=1)
 
 
-def construire(x, version="v1", sans=()):
-    """Retourner (tableau float64 (heures, variables), noms des variables)."""
+def construire(x, version="v1", sans=(), dmop=None, vocabulaire=None):
+    """Retourner (tableau float64 (heures, variables), noms des variables).
+
+    Avec un vocabulaire dmop (appris sur l'entraînement), ajoute l'état des sous-systèmes
+    calculé sur la table dmop brute couvrant les mêmes heures.
+    """
     if version == "v1":
         table = x.copy()
-    elif version == "v2":
-        table = ajouter_v2(x)
+    elif version in ("v2", "v2r"):
+        table = ajouter_v2(x, reduite=version == "v2r")
     else:
         raise ValueError(f"Version de variables inconnue : {version}")
+    if vocabulaire:
+        etats = dmop_etats.construire(dmop, x.index.to_numpy(), vocabulaire)
+        table = pd.concat([table, etats.set_axis(table.index)], axis=1)
     garder = [c for c in table.columns if not set(groupe_de(c)) & set(sans)]
     table = table[garder]
     valeurs = table.to_numpy(dtype=np.float64)

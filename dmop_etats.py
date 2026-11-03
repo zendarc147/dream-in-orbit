@@ -42,6 +42,9 @@ def construire(table, heures, vocabulaire):
         lignes = table[sous_systeme(table.subsystem) == ss]
         temps = lignes.ut_ms.to_numpy(dtype=np.int64)
         codes = lignes.subsystem.to_numpy()
+        if not len(temps):
+            # Sous-système jamais commandé sur cette période : état inconnu, aucun événement.
+            temps, codes = np.array([np.iinfo(np.int64).max]), np.array([""])
         # Dernière commande strictement avant la fin de l'heure.
         position = np.searchsorted(temps, fins, side="left") - 1
         connue = position >= 0
