@@ -35,7 +35,8 @@ CONFIG_DEFAUT = {
     "etats_dmop": False,     # ajouter l'état « dernière commande » des sous-systèmes dmop
     "sans": [],              # groupes de variables retirés (ablations)
     "memoire": True,         # False : ni encodeur ni récurrence (ablation)
-    "statique": False,       # donner à chaque heure le niveau moyen des circuits sur power_init
+    "statique": False,
+    "bruit": 0.0,            # écart-type d'un bruit gaussien ajouté aux entrées normalisées (entraînement)       # donner à chaque heure le niveau moyen des circuits sur power_init
     "taille": 128,
     "couches": 2,
     "dropout": 0.1,
@@ -173,6 +174,9 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
             xs.append(f[s:s + ti + sim])
             ys.append(y[s:s + ti + sim])
         x = torch.as_tensor(normaliser_entrees(np.stack(xs), stats), dtype=torch.float32, device=appareil)
+        if config.get("bruit", 0.0):
+            # Régularisation : le modèle ne doit pas dépendre d'une valeur d'entrée exacte.
+            x = x + config["bruit"] * torch.randn_like(x)
         y = np.stack(ys)
         y_init = torch.as_tensor(normaliser_courants(y[:, :ti], stats["y_moyenne"], stats["y_ecart"]),
                                  dtype=torch.float32, device=appareil)

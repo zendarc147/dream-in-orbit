@@ -7,6 +7,7 @@ entraînement sur annee1 seul, affichage d'annee2). La bande = ± 2 écarts-type
 l'ensemble de graines. Produit aussi la courbe de dérive (RMSE glissante sur 7 jours).
 """
 import argparse
+import tempfile
 from pathlib import Path
 
 import matplotlib
@@ -28,10 +29,11 @@ def main():
     ap.add_argument("--out", type=Path, default=RACINE / "demo/reve_contre_realite.png")
     args = ap.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    pred_csv, ecart_csv = args.out.with_suffix(".pred.csv"), args.out.with_suffix(".ecart.csv")
-    monde.predire(args.validation / "test", pred_csv, args.poids, sortie_incertitude=ecart_csv)
-    pred = pd.read_csv(pred_csv, index_col="ut_ms")
-    ecart = pd.read_csv(ecart_csv, index_col="ut_ms")
+    with tempfile.TemporaryDirectory() as temporaire:
+        pred_csv, ecart_csv = Path(temporaire) / "pred.csv", Path(temporaire) / "ecart.csv"
+        monde.predire(args.validation / "test", pred_csv, args.poids, sortie_incertitude=ecart_csv)
+        pred = pd.read_csv(pred_csv, index_col="ut_ms")
+        ecart = pd.read_csv(ecart_csv, index_col="ut_ms")
     verite = pd.read_csv(args.validation / "verite_horaire.csv", index_col="ut_ms").reindex(pred.index)
     dates = pd.to_datetime(pred.index, unit="ms")
 
