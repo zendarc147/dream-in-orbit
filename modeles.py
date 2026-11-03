@@ -4,8 +4,9 @@ import importlib
 MODELES = {
     "boosting": "baselines.boosting",
     "gru": "monde",
+    "gru_mixte": "mixte",
 }
-FINAL = "gru"
+FINAL = "gru_mixte"
 
 
 def module(nom):

@@ -1,12 +1,13 @@
 """Démo « rêve contre réalité » sur la validation directe, avec la bande d'incertitude.
 
-    python demo.py --poids runs/e3/directe --out demo/reve_contre_realite.png
+    python demo.py --poids runs/NOM/directe --out demo/reve_contre_realite.png
 
 Le modèle doit avoir été entraîné sans la période affichée (validation directe :
 entraînement sur annee1 seul, affichage d'annee2). La bande = ± 2 écarts-types de
-l'ensemble de graines. Produit aussi la courbe de dérive (RMSE glissante sur 7 jours).
+l'ensemble (tous les modèles de tous les membres). Produit aussi la courbe de dérive (RMSE glissante sur 7 jours).
 """
 import argparse
+import json
 import tempfile
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-import monde  # noqa: E402
+import modeles  # noqa: E402
 
 RACINE = Path(__file__).resolve().parent
 CIRCUITS = ["NPWD2551", "NPWD2451", "NPWD2532", "NPWD2851"]
@@ -31,7 +32,9 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporaire:
         pred_csv, ecart_csv = Path(temporaire) / "pred.csv", Path(temporaire) / "ecart.csv"
-        monde.predire(args.validation / "test", pred_csv, args.poids, sortie_incertitude=ecart_csv)
+        meta = json.loads((args.poids / "modele.json").read_text())
+        modeles.module(meta["modele"]).predire(args.validation / "test", pred_csv, args.poids,
+                                               sortie_incertitude=ecart_csv)
         pred = pd.read_csv(pred_csv, index_col="ut_ms")
         ecart = pd.read_csv(ecart_csv, index_col="ut_ms")
     verite = pd.read_csv(args.validation / "verite_horaire.csv", index_col="ut_ms").reindex(pred.index)

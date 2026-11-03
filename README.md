@@ -12,7 +12,8 @@ Scores et historique des essais : `RESULTATS.md`. Ablations : `ABLATIONS.md`.
 |---|---:|---:|---:|
 | Constante | 0.1058 | 0.1252 | 0.1155 |
 | Gradient boosting + recalage sur power_init (`baselines/`) | 0.0951 | 0.0999 | 0.0975 |
-| **World model GRU, ensemble de 5 graines (modèle final)** | **0.0872** | **0.0971** | **0.0921** |
+| World model GRU, ensemble de 5 graines (v1 + bruit) | 0.0872 | 0.0971 | 0.0921 |
+| **Ensemble mixte de world models GRU (v1 + bruit, v2r ; 2 × 5 graines), modèle final** | **0.0863** | **0.0964** | **0.0914** |
 
 Démo : `demo/reve_contre_realite.png` (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
@@ -37,7 +38,7 @@ python predict.py --test_dir DOSSIER --out predictions.csv
 
 `DOSSIER` contient `dmop.csv`, `evtf.csv`, `ftl.csv`, `saaf.csv`, `ltdata.csv`,
 `power_init.csv` et `heures_a_predire.csv`. Les poids commités sont dans `poids/`
-(`monde.pt` + `modele.json`). Moins de 5 minutes sur CPU.
+(`modele.json`, `membres.json`, `membre*/monde.pt`). Environ 20 s sur CPU.
 
 Avec l'incertitude (écart-type de l'ensemble) :
 
@@ -98,6 +99,8 @@ python -m unittest test_prepare baselines.test_ridge test_predict
 | `prepare.py` | contextes bruts → 65 variables horaires (schéma appris sur annee1) |
 | `variables.py` | variables v2 : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin |
 | `monde.py` | world model GRU (encodeur sur power_init → h0, simulateur 2 couches, tête 33 circuits) |
+| `mixte.py` | modèle final : moyenne de deux ensembles de world models (variables v1 et v2r) |
+| `dmop_etats.py` | état « dernière commande » des sous-systèmes dmop (testé, non retenu) |
 | `donnees.py` | chargement des années préparées et des dossiers de test |
 | `train.py`, `predict.py` | entraînement et prédiction (modèle choisi dans `modeles.py`) |
 | `valider.py`, `ablations.py`, `demo.py` | validation, ablations, figure rêve contre réalité |
