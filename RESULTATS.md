@@ -95,3 +95,28 @@ Modèle final (`poids/`, `mixte.py`) : 2 membres × 5 graines, entraînés sur a
 Entraînement 2640 s sur CPU 4 cœurs (ralenti par des tâches concurrentes ; ≈ 25 min seul).
 Prédiction 18 s. Poids : 7 Mo. Temps sur GPU T4 non mesuré (pas de GPU ici) ; sur Colab,
 `python train.py` utilise CUDA automatiquement, à lancer par toi pour vérifier.
+
+## Session « améliorations » (branche `ameliorations`)
+
+Protocole : chaque essai via `valider.py` (ensemble mixte complet, 2 membres × 5 graines,
+deux directions). Un changement est gardé si la moyenne baisse de plus de 0.0015 sans
+dégrader aucune direction ; entre 0.0005 et 0.0015, confirmation avec les graines 5 à 9.
+Uniquement des réglages globaux (aucun choix circuit par circuit). Machine : CPU 16 cœurs,
+pas de GPU ; durée = entraînement des deux directions en parallèle + prédictions.
+
+| Essai | Changement | RMSE directe | RMSE inverse | Moyenne | Durée |
+|---|---|---:|---:|---:|---|
+| Réf. | Ensemble mixte actuel, relancé sur cette machine (reproduit à l'identique) | 0.0863 | 0.0964 | 0.0914 | 1097 s |
+| A1 | Moyenne exponentielle des poids (EMA 0.98), 300 pas | 0.0863 | 0.0965 | 0.0914 | 1035 s |
+| A2 | EMA 0.99 + 600 pas (au lieu de 300) | 0.0855 | 0.0961 | 0.0908 | 2703 s |
+| A2 bis | Confirmation, graines 5 à 9 : référence | 0.0869 | 0.0966 | 0.0917 | 2583 s (en parallèle d'A2 ter) |
+| **A2 ter** | **Confirmation, graines 5 à 9 : EMA 0.99 + 600 pas (retenu)** | **0.0851** | **0.0963** | **0.0907** | 4800 s (en parallèle) |
+
+A1/A2 : l'EMA seule ne change rien à 300 pas (le OneCycle termine déjà avec un taux
+d'apprentissage quasi nul, ce qui lisse les derniers pas). Doubler les pas avec une
+EMA plus longue aide un peu : −0.0006 sur les graines 0 à 4, −0.0011 sur les graines
+5 à 9, les deux directions s'améliorent dans les deux cas. Retenu par défaut
+(`pas` = 600, `ema` = 0.99). L'entraînement dure deux fois plus longtemps.
+
+Pour économiser le calcul, les pistes suivantes sont d'abord criblées à 300 pas contre
+la référence à 300 pas (0.0914) ; un changement retenu est ensuite vérifié à 600 pas.
