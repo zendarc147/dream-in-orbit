@@ -120,3 +120,18 @@ EMA plus longue aide un peu : −0.0006 sur les graines 0 à 4, −0.0011 sur le
 
 Pour économiser le calcul, les pistes suivantes sont d'abord criblées à 300 pas contre
 la référence à 300 pas (0.0914) ; un changement retenu est ensuite vérifié à 600 pas.
+| B1 | Regard appris : Conv1d non causale ±24 h (32 canaux) avant le GRU, sur les deux membres, 300 pas | 0.0868 | 0.0986 | 0.0927 | 2476 s (en parallèle d'A2 ter) |
+| C1 | Correction de niveau issue de power_init qui s'estompe : écart normalisé de chaque circuit sur les 7 jours × poids appris × 2^(−t / demi-vie apprise), 300 pas | 0.0860 | 0.0941 | 0.0900 | 844 s |
+| C1 bis | Idem, graines 5 à 9 (référence 300 pas graines 5 à 9 : 0.0917) | 0.0864 | 0.0945 | 0.0905 | 1869 s (en parallèle) |
+| **C2** | **Correction de niveau + EMA 0.99 + 600 pas, graines 0 à 4 (retenu)** | **0.0853** | **0.0940** | **0.0897** | 2978 s (en parallèle) |
+
+C : le biais résiduel venait surtout des circuits dont le niveau change d'une année à
+l'autre (biais de l'ensemble de référence : 2531 +0.11 en directe, −0.095 en inverse ;
+2851 −0.089 / +0.099). Le niveau des 7 premiers jours prédit bien les 2 à 4 premiers mois
+(inverse : 2531 vaut 0.57 sur power_init et ≈ 0.5 pendant 4 mois, contre 0.013 en moyenne
+sur l'année d'entraînement), puis plus du tout. La correction est un terme additif de la
+sortie, global (même forme pour tous les circuits) : poids et demi-vie par circuit sont
+des paramètres du réseau, appris par descente de gradient sur l'entraînement seul,
+initialisés à 0 et 30 jours. Les poids appris les plus forts vont à 2531, 2851, 2881 ;
+les demi-vies restent proches de 30 jours (660 à 750 h). Gain surtout en inverse
+(−0.0024). Confirmé sur les graines 5 à 9 (−0.0013), puis à 600 pas (−0.0011).

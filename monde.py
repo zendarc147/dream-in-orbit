@@ -23,6 +23,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 
@@ -49,7 +50,8 @@ CONFIG_DEFAUT = {
     "lr": 3e-3,
     "weight_decay": 1e-4,
     "conv": 0,               # canaux du regard appris ±24 h (Conv1d non causale avant le GRU ; 0 : aucun)
-    "niveau": False,         # correction du niveau de power_init qui s'estompe (demi-vie apprise par circuit)
+    "niveau": True,          # correction du niveau de power_init qui s'estompe (demi-vie apprise par circuit)
+    "continu": False,        # années contiguës fusionnées : les épisodes traversent la frontière
     "ema": 0.99,             # décroissance de la moyenne exponentielle des poids (0 : pas de moyenne)
     "graines": [0, 1, 2, 3, 4],
     "threads": 4,
@@ -175,10 +177,18 @@ def preparer_annees(annees, config):
     schema = donnees.charger_schema()
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
     vocabulaire = dmop_etats.apprendre_vocabulaire(list(tables.values())) if config["etats_dmop"] else None
-    periodes = []
+    blocs = []
     for annee in annees:
-        _, x, y = donnees.charger_annee(annee, schema)
-        f, noms = variables.construire(x, config["variables"], config["sans"], tables[annee], vocabulaire)
+        heures, x, y = donnees.charger_annee(annee, schema)
+        if config.get("continu") and blocs and blocs[-1][0][-1] + donnees.H == heures[0] and not vocabulaire:
+            # Année qui suit la précédente sans trou : une seule période, les variables
+            # glissantes et les épisodes passent la frontière comme dans une vraie simulation.
+            avant = blocs.pop()
+            heures, x, y = np.concatenate([avant[0], heures]), pd.concat([avant[1], x]), np.concatenate([avant[2], y])
+        blocs.append((heures, x, y, tables[annee]))
+    periodes = []
+    for _, x, y, dmop in blocs:
+        f, noms = variables.construire(x, config["variables"], config["sans"], dmop, vocabulaire)
         periodes.append((f, y))
     return schema, periodes, noms, vocabulaire
 
