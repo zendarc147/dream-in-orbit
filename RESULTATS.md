@@ -63,3 +63,10 @@ Analyse de l'ensemble v1 : 2551 et 2451 font 52 % de l'erreur en directe, 34 % e
 Plusieurs circuits sont prédits plus mal qu'une constante à leur vraie moyenne : 2531
 (RMSE 0.167 pour un écart-type de 0.081 en directe), 2851, 2881 et 2561. Leur niveau change
 d'une année à l'autre (2531 : moyenne 0.125 sur annee1, 0.013 sur annee2).
+| It. 1 | Niveau moyen de power_init donné au simulateur à chaque heure (« statique »), 5 graines | 0.0886 | 0.1009 | 0.0948 | 1100 s + 10 s |
+
+Itération 1 non retenue : dans une même année, le niveau initial reste informatif et le
+modèle s'y fie ; d'une année à l'autre, il trompe (inverse +0.0034).
+
+Ablations (`ablations.py`, 2 graines par direction, détail dans `ABLATIONS.md`) :
+retirer la mémoire coûte +0.0049, les éclipses +0.0033, saaf +0.0029, dmop +0.0009.
