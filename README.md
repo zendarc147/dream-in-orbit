@@ -6,6 +6,17 @@ tendances ltdata), puis simule seul ses 33 circuits heure par heure sur toute un
 à partir de ses 7 premiers jours réels (`power_init.csv`). Sujet : `sujet.md`.
 Scores et historique des essais : `RESULTATS.md`. Ablations : `ABLATIONS.md`.
 
+## Résultats (RMSE, `evaluate.py`)
+
+| Modèle | Directe (annee1 → annee2) | Inverse (annee2 → annee1) | Moyenne |
+|---|---:|---:|---:|
+| Constante | 0.1058 | 0.1252 | 0.1155 |
+| Gradient boosting + recalage sur power_init (`baselines/`) | 0.0951 | 0.0999 | 0.0975 |
+| **World model GRU, ensemble de 5 graines (modèle final)** | **0.0872** | **0.0971** | **0.0921** |
+
+Démo : `demo/reve_contre_realite.png` (rêve contre réalité sur annee2, bande ± 2σ de
+l'ensemble, courbe de dérive).
+
 ## Installation
 
 Python 3.13 et [uv](https://docs.astral.sh/uv/) :

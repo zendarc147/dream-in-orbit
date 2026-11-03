@@ -70,3 +70,12 @@ modèle s'y fie ; d'une année à l'autre, il trompe (inverse +0.0034).
 
 Ablations (`ablations.py`, 2 graines par direction, détail dans `ABLATIONS.md`) :
 retirer la mémoire coûte +0.0049, les éclipses +0.0033, saaf +0.0029, dmop +0.0009.
+| It. 2 | 200 pas au lieu de 300, 5 graines | 0.0876 | 0.0989 | 0.0933 | 640 s + 12 s |
+| **It. 3** | **Bruit gaussien σ = 0.3 sur les entrées normalisées pendant l'entraînement, 5 graines (retenu, final)** | **0.0872** | **0.0971** | **0.0921** | 1060 s + 11 s |
+
+Arrêt : trois itérations de suite sans gain > 0.001 (statique −0.0023, 200 pas −0.0008,
+bruit +0.0004). Le bruit est gardé, car il améliore la moyenne, même si le gain reste
+sous le bruit de graine.
+
+Modèle final (`poids/`) : même configuration, entraîné sur annee1 + annee2. Entraînement
+717 s sur CPU 4 cœurs ; prédiction 10 s ; poids 3,4 Mo.
