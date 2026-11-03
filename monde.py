@@ -39,6 +39,7 @@ CONFIG_DEFAUT = {
     "statique": False,       # donner à chaque heure le niveau moyen des circuits sur power_init
     "cibles": None,          # circuits portés par la perte (None : les 33) ; sert aux spécialistes
     "bruit": 0.3,            # écart-type du bruit gaussien ajouté aux entrées normalisées (entraînement)
+    "bruit_lent": 0.0,       # écart-type d'un décalage constant par épisode et par variable (entraînement)
     "taille": 128,
     "couches": 2,
     "dropout": 0.1,
@@ -51,7 +52,7 @@ CONFIG_DEFAUT = {
     "weight_decay": 1e-4,
     "conv": 0,               # canaux du regard appris ±24 h (Conv1d non causale avant le GRU ; 0 : aucun)
     "niveau": True,          # correction du niveau de power_init qui s'estompe (demi-vie apprise par circuit)
-    "continu": False,        # années contiguës fusionnées : les épisodes traversent la frontière
+    "continu": True,         # années contiguës fusionnées : les épisodes traversent la frontière
     "ema": 0.99,             # décroissance de la moyenne exponentielle des poids (0 : pas de moyenne)
     "graines": [0, 1, 2, 3, 4],
     "threads": 4,
@@ -232,6 +233,9 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
         if config.get("bruit", 0.0):
             # Régularisation : le modèle ne doit pas dépendre d'une valeur d'entrée exacte.
             x = x + config["bruit"] * torch.randn_like(x)
+        if config.get("bruit_lent", 0.0):
+            # Décalage fixe sur tout l'épisode : imite un contexte dont le niveau change d'une année à l'autre.
+            x = x + config["bruit_lent"] * torch.randn(x.shape[0], 1, x.shape[2], device=appareil)
         y = np.stack(ys)
         y_init = torch.as_tensor(normaliser_courants(y[:, :ti], stats["y_moyenne"], stats["y_ecart"]),
                                  dtype=torch.float32, device=appareil)

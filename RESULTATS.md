@@ -135,3 +135,18 @@ des paramètres du réseau, appris par descente de gradient sur l'entraînement 
 initialisés à 0 et 30 jours. Les poids appris les plus forts vont à 2531, 2851, 2881 ;
 les demi-vies restent proches de 30 jours (660 à 750 h). Gain surtout en inverse
 (−0.0024). Confirmé sur les graines 5 à 9 (−0.0013), puis à 600 pas (−0.0011).
+| D1 | Régularisation : taille 96, dropout 0.25, weight_decay 1e-3 (avec correction de niveau, 300 pas ; à comparer à C1) | 0.0867 | 0.0937 | 0.0902 | 877 s (en parallèle de C2) |
+| D2 | Bruit 0.3 aussi sur le membre v2r (300 pas ; à comparer à C1) | 0.0860 | 0.0941 | 0.0900 | 862 s |
+| E1 | 3e membre de forme différente (v2r, bruit 0.3, taille 64, morceaux de 15 jours), poids égal (300 pas ; à comparer à C1) | 0.0861 | 0.0942 | 0.0902 | 1008 s |
+| F1 | Bruit « lent » σ = 0.2 : décalage constant par épisode et par variable sur les entrées normalisées (300 pas ; à comparer à C1) | 0.0860 | 0.0947 | 0.0904 | 840 s |
+
+D, E, F : aucune régularisation supplémentaire ni membre de plus n'aide. Arrêt de la
+session après quatre essais de suite sans gain retenu (B1 compté avant C ; D1, D2, E1, F1).
+
+Modèle final (`poids/`) : ensemble mixte (v1 + bruit 0.3, v2r ; 2 × 5 graines), 600 pas,
+EMA 0.99, correction de niveau apprise. Pour le modèle final seulement, annee1 et annee2
+(contiguës, à une heure près) sont fusionnées en une seule période : les variables
+glissantes et les épisodes d'entraînement traversent la frontière (piste non mesurable
+en validation, où une seule année sert à l'entraînement). Entraînement 1453 s sur CPU
+16 cœurs (en parallèle des ablations) ; prédiction 8 s sur 4 cœurs ; poids 6,9 Mo.
+Démo régénérée avec les poids de C2 directe (entraînés sur annee1 seul).
