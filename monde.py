@@ -35,8 +35,8 @@ CONFIG_DEFAUT = {
     "etats_dmop": False,     # ajouter l'état « dernière commande » des sous-systèmes dmop
     "sans": [],              # groupes de variables retirés (ablations)
     "memoire": True,         # False : ni encodeur ni récurrence (ablation)
-    "statique": False,
-    "bruit": 0.0,            # écart-type d'un bruit gaussien ajouté aux entrées normalisées (entraînement)       # donner à chaque heure le niveau moyen des circuits sur power_init
+    "statique": False,       # donner à chaque heure le niveau moyen des circuits sur power_init
+    "bruit": 0.3,            # écart-type du bruit gaussien ajouté aux entrées normalisées (entraînement)
     "taille": 128,
     "couches": 2,
     "dropout": 0.1,
