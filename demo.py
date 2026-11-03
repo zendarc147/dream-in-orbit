@@ -61,7 +61,7 @@ def main():
     axes[-1].set_title("Dérive : RMSE glissante sur 7 jours (33 circuits)", loc="left", fontsize=10)
     axes[-1].set_ylabel("RMSE")
     fig.suptitle("Dream in Orbit — rêve contre réalité (validation directe : entraîné sur annee1, simulé sur annee2)")
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
     fig.savefig(args.out, dpi=110)
     masque = verite.notna()
     print(f"Démo écrite dans {args.out} ; RMSE globale "
