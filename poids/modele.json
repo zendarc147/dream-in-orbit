@@ -1,0 +1,8 @@
+{
+  "modele": "boosting",
+  "annees": [
+    "annee1",
+    "annee2"
+  ],
+  "options": {}
+}

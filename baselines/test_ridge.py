@@ -9,11 +9,11 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
-from predict_ridge import predire
-from train_ridge import entrainer
+from baselines.predict_ridge import predire
+from baselines.train_ridge import entrainer
 
 
-SCHEMA = json.loads((Path(__file__).resolve().parent / "data/prepared/schema.json").read_text())
+SCHEMA = json.loads((Path(__file__).resolve().parent.parent / "data/prepared/schema.json").read_text())
 
 
 class RidgeTest(unittest.TestCase):
