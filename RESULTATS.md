@@ -150,3 +150,6 @@ glissantes et les épisodes d'entraînement traversent la frontière (piste non 
 en validation, où une seule année sert à l'entraînement). Entraînement 1453 s sur CPU
 16 cœurs (en parallèle des ablations) ; prédiction 8 s sur 4 cœurs ; poids 6,9 Mo.
 Démo régénérée avec les poids de C2 directe (entraînés sur annee1 seul).
+
+Ablations relancées sur la nouvelle configuration (`ABLATIONS.md`, v1 seul, 2 graines) :
+mémoire +0.0071, saaf +0.0027, dmop +0.0019, éclipses +0.0016. Durée 2495 s.
