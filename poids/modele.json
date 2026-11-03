@@ -1,5 +1,5 @@
 {
-  "modele": "boosting",
+  "modele": "gru",
   "annees": [
     "annee1",
     "annee2"
