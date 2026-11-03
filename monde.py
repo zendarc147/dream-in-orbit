@@ -45,13 +45,17 @@ CONFIG_DEFAUT = {
     "jours_sim": 365,        # longueur d'un épisode de simulation
     "morceau_h": 720,        # BPTT tronquée par morceaux de 30 jours (0 : un seul morceau)
     "lot": 32,
-    "pas": 300,
+    "pas": 600,
     "lr": 3e-3,
     "weight_decay": 1e-4,
+    "conv": 0,               # canaux du regard appris ±24 h (Conv1d non causale avant le GRU ; 0 : aucun)
+    "niveau": False,         # correction du niveau de power_init qui s'estompe (demi-vie apprise par circuit)
+    "ema": 0.99,             # décroissance de la moyenne exponentielle des poids (0 : pas de moyenne)
     "graines": [0, 1, 2, 3, 4],
     "threads": 4,
 }
 H_JOUR = 24
+MARGE_REGARD = 24  # heures vues de part et d'autre par la Conv1d du regard
 APPAREIL = "cuda" if torch.cuda.is_available() else "cpu"
 
 
@@ -79,14 +83,28 @@ def calculer_stats(f_tout, y_tout):
 
 
 class MondeGRU(nn.Module):
-    def __init__(self, n_entrees, n_circuits, taille, couches, dropout, memoire=True, statique=False):
+    def __init__(self, n_entrees, n_circuits, taille, couches, dropout, memoire=True, statique=False, conv=0,
+                 niveau=False):
         super().__init__()
+        # Correction de niveau : écart normalisé de chaque circuit sur power_init, multiplié
+        # par un poids appris et atténué par une demi-vie apprise (initialisée à 30 jours).
+        # Le poids part de 0 : sans signal, le modèle de base est inchangé.
+        self.niveau = niveau
+        if niveau:
+            self.poids_niveau = nn.Parameter(torch.zeros(n_circuits))
+            self.log_demi_vie = nn.Parameter(torch.full((n_circuits,), float(np.log(720.0))))
+        # Regard appris : une Conv1d non causale lit le planning de t-24 h à t+24 h (connu
+        # d'avance) ; ses sorties s'ajoutent aux variables de l'heure t. Le simulateur reçoit
+        # alors un contexte avec MARGE_REGARD heures en plus de chaque côté.
+        self.marge = MARGE_REGARD if conv else 0
+        if conv:
+            self.regard = nn.Conv1d(n_entrees, conv, 2 * self.marge + 1)
         self.memoire = memoire
         self.statique = statique and memoire
         self.couches, self.taille = couches, taille
         # Avec « statique », le niveau moyen de chaque circuit sur power_init (et la part
         # d'heures connues) accompagne le contexte à chaque heure : il ne s'efface pas.
-        entree = n_entrees + (2 * n_circuits if self.statique else 0)
+        entree = n_entrees + conv + (2 * n_circuits if self.statique else 0)
         self.projection = nn.Sequential(nn.Linear(entree, taille), nn.GELU())
         if memoire:
             # L'encodeur voit le contexte, les courants normalisés et leur masque de présence.
@@ -115,18 +133,35 @@ class MondeGRU(nn.Module):
         comptes = masque.sum(dim=1)
         return torch.cat([valeurs.sum(dim=1) / comptes.clamp(min=1), comptes / y_init.shape[1]], dim=-1)
 
-    def simuler(self, x_sim, h, resume=None):
-        """Avancer sur le contexte seul : retourne (courants (B, Ts, C), état final)."""
+    def simuler(self, x_sim, h, resume=None, debut=0):
+        """Avancer sur le contexte seul : retourne (courants (B, Ts, C), état final).
+        x_sim porte self.marge heures de plus de chaque côté (voir etendre)."""
+        if self.marge:
+            regard = nn.functional.gelu(self.regard(x_sim.transpose(1, 2))).transpose(1, 2)
+            x_sim = torch.cat([x_sim[:, self.marge:-self.marge], regard], dim=-1)
         if self.statique:
             x_sim = torch.cat([x_sim, resume[:, None].expand(-1, x_sim.shape[1], -1)], dim=-1)
         z = self.projection(x_sim)
         if not self.memoire:
             return self.tete(self.simulateur(z)), None
         sortie, h = self.simulateur(z, h)
-        return self.tete(sortie), h
+        sortie = self.tete(sortie)
+        if self.niveau:
+            # debut : heure de simulation du premier pas de ce morceau (BPTT tronquée).
+            t = debut + torch.arange(sortie.shape[1], device=sortie.device, dtype=sortie.dtype)
+            attenuation = torch.exp2(-t[:, None] / self.log_demi_vie.exp())
+            sortie = sortie + resume[:, None, :sortie.shape[-1]] * self.poids_niveau * attenuation
+        return sortie, h
 
     def forward(self, x_init, y_init, x_sim):
         return self.simuler(x_sim, self.etat_initial(x_init, y_init), self.resume_init(y_init))[0]
+
+
+def etendre(x, marge):
+    """Prolonger (B, T, F) de marge heures de chaque côté en répétant les heures du bord."""
+    if not marge:
+        return x
+    return torch.cat([x[:, :1].expand(-1, marge, -1), x, x[:, -1:].expand(-1, marge, -1)], dim=1)
 
 
 def normaliser_courants(y, moyenne, ecart):
@@ -155,12 +190,18 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
     morceau = config["morceau_h"] or ts
     appareil = APPAREIL
     modele = MondeGRU(int(stats["garder"].sum()), n_circuits, config["taille"], config["couches"],
-                      config["dropout"], config["memoire"], config.get("statique", False)).to(appareil)
+                      config["dropout"], config["memoire"], config.get("statique", False),
+                      config.get("conv", 0), config.get("niveau", False)).to(appareil)
     with torch.no_grad():
         modele.tete.bias.copy_(torch.as_tensor(stats["y_moyenne"], dtype=torch.float32))
     optim = torch.optim.AdamW(modele.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
     plan = torch.optim.lr_scheduler.OneCycleLR(optim, max_lr=config["lr"], total_steps=config["pas"],
                                                pct_start=0.1)
+    # Moyenne exponentielle des poids : le modèle rendu est la moyenne des derniers pas,
+    # moins sensible au bruit des derniers lots qu'un seul point final.
+    moyen = (torch.optim.swa_utils.AveragedModel(
+        modele, multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(config["ema"]))
+        if config.get("ema") else None)
     debut, cumul, pas = time.time(), 0.0, 0
     colonnes = torch.ones(n_circuits, dtype=torch.bool, device=appareil)
     if config.get("cibles"):
@@ -185,6 +226,7 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
         y_init = torch.as_tensor(normaliser_courants(y[:, :ti], stats["y_moyenne"], stats["y_ecart"]),
                                  dtype=torch.float32, device=appareil)
         cible = torch.as_tensor(y[:, ti:], dtype=torch.float32, device=appareil)
+        x_long = etendre(x, modele.marge)
         h = None
         for a in range(0, sim, morceau):
             if pas >= config["pas"]:
@@ -194,7 +236,7 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
                 resume = modele.resume_init(y_init)
             elif h is not None:
                 h = h.detach()
-            sortie, h = modele.simuler(x[:, ti + a:ti + a + morceau], h, resume)
+            sortie, h = modele.simuler(x_long[:, ti + a:ti + a + morceau + 2 * modele.marge], h, resume, a)
             c = cible[:, a:a + morceau]
             masque = torch.isfinite(c) & colonnes
             if not masque.any():
@@ -205,12 +247,14 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
             nn.utils.clip_grad_norm_(modele.parameters(), 1.0)
             optim.step()
             plan.step()
+            if moyen is not None:
+                moyen.update_parameters(modele)
             cumul = 0.98 * cumul + 0.02 * perte.item() if pas else perte.item()
             if pas % 100 == 0 or pas == config["pas"] - 1:
                 print(f"  graine {graine} pas {pas:5d} RMSE lissée {cumul ** 0.5:.4f}"
                       f" ({time.time() - debut:.0f} s)", flush=True)
             pas += 1
-    return modele.cpu()
+    return (moyen.module if moyen is not None else modele).cpu()
 
 
 def _entrainer_graine(arguments):
@@ -259,7 +303,8 @@ def charger(dossier):
     for etat in paquet["etats"]:
         modele = MondeGRU(int(stats["garder"].sum()), len(paquet["circuits"]), config["taille"],
                           config["couches"], config["dropout"], config["memoire"],
-                          config.get("statique", False))
+                          config.get("statique", False), config.get("conv", 0),
+                          config.get("niveau", False))
         modele.load_state_dict({k: v.float() for k, v in etat.items()})
         modeles.append(modele.eval())
     return paquet, config, stats, modeles
@@ -277,7 +322,7 @@ def simuler(dossier, x_df, y_init, n_init, dmop=None):
     x = torch.as_tensor(normaliser_entrees(f, stats)[None], dtype=torch.float32)
     yi = torch.as_tensor(normaliser_courants(y_init[None, :n_init], stats["y_moyenne"], stats["y_ecart"]),
                          dtype=torch.float32)
-    sorties = np.stack([m(x[:, :n_init], yi, x[:, n_init:])[0].numpy() for m in modeles])
+    sorties = np.stack([m(x[:, :n_init], yi, etendre(x, m.marge)[:, n_init:])[0].numpy() for m in modeles])
     # Les heures initiales sont connues : on y recopie la vérité (ou la moyenne si absente).
     debut = np.where(np.isfinite(y_init[:n_init]), y_init[:n_init], stats["y_moyenne"])
     moyenne = np.concatenate([debut, sorties.mean(axis=0)])
