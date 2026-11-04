@@ -68,6 +68,21 @@ pip install -r requirements.txt
 python train.py
 ```
 
+### Sur Kaggle depuis le terminal
+
+`lancer_kaggle.py` envoie le dépôt tel qu'il est sur le disque (dataset privé), lance la
+commande sur un GPU T4 Kaggle et rapatrie `runs/` dans le dépôt, comme un lancement local.
+Prérequis : `uv tool install kaggle --with six` et un token API Kaggle dans
+`~/.kaggle/access_token` (kaggle.com > Settings > API).
+
+```bash
+python lancer_kaggle.py -- valider.py --nom essai --modele gru_mixte
+python lancer_kaggle.py --recuperer poids -- train.py
+python lancer_kaggle.py --sans-attendre -- valider.py --nom essai   # puis : --rapatrier
+```
+
+`kaggle.ipynb` fait la même chose depuis l'interface web (clone GitHub, secret `GITHUB_TOKEN`).
+
 ## Valider
 
 Deux directions, toujours via `train.py` → `predict.py` → `evaluate.py` :
