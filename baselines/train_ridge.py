@@ -8,7 +8,7 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
 
-def entrainer(racine):
+def entrainer(racine, sortie=None):
     racine = Path(racine)
     prepare = racine / "data/prepared"
     schema = json.loads((prepare / "schema.json").read_text())
@@ -58,7 +58,7 @@ def entrainer(racine):
         "coef": coefficients,
         "n_observations": effectifs,
     }
-    sortie = racine / "ridge_model.json"
+    sortie = Path(sortie) if sortie else racine / "ridge_model.json"
     sortie.write_text(json.dumps(modele, indent=2, allow_nan=False) + "\n")
     print(f"{len(circuits)} Ridge entraînés sur annee1, {len(variables)} variables utilisées"
           f" sur {len(variables_entree)} ; modèle : {sortie.name}")
@@ -66,4 +66,5 @@ def entrainer(racine):
 
 
 if __name__ == "__main__":
-    entrainer(Path(__file__).resolve().parent)
+    ici = Path(__file__).resolve().parent
+    entrainer(ici.parent, ici / "ridge_model.json")

@@ -1,32 +1,33 @@
-"""Calculer les constantes depuis les seules cibles horaires d'annee1."""
+"""Entraîner le modèle final à partir du kit, en une commande.
+
+    python train.py                       # annee1 + annee2 -> poids/
+    python train.py --annees annee1 --out runs/essai
+
+Les données horaires sont lues dans data/prepared/ (créées par prepare.py si absentes).
+"""
+import argparse
 import json
+import time
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
+import modeles
+
+RACINE = Path(__file__).resolve().parent
 
 
 def main():
-    racine = Path(__file__).resolve().parent
-    schema = json.loads((racine / "data/prepared/schema.json").read_text())
-    circuits = schema["target_columns"]
-    y = pd.read_csv(racine / "data/prepared/annee1/y.csv")
-    if (len(circuits) != 33 or len(set(circuits)) != 33
-            or not all(c.startswith("NPWD") for c in circuits)
-            or y.columns.tolist() != ["ut_ms"] + circuits):
-        raise ValueError("33 circuits NPWD dans l'ordre du schéma sont requis")
-    if y.ut_ms.isna().any() or not y.ut_ms.is_unique:
-        raise ValueError("Les heures d'apprentissage doivent être présentes et uniques")
-    cibles = y[circuits]
-    if np.isinf(cibles.to_numpy(dtype=float)).any():
-        raise ValueError("Les cibles contiennent une valeur infinie")
-    # Une voix par heure connue, sans remplacer les heures manquantes par zéro.
-    constantes = cibles.mean(skipna=True)
-    if not np.isfinite(constantes.to_numpy()).all():
-        raise ValueError("Chaque circuit doit avoir au moins une cible finie")
-    sortie = racine / "baseline_constante.json"
-    sortie.write_text(json.dumps(constantes.to_dict(), indent=2, allow_nan=False) + "\n")
-    print(f"{len(constantes)} constantes enregistrées dans {sortie.name}")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--annees", nargs="+", default=["annee1", "annee2"])
+    ap.add_argument("--out", type=Path, default=RACINE / "poids")
+    ap.add_argument("--modele", default=modeles.FINAL, choices=sorted(modeles.MODELES))
+    ap.add_argument("--options", default="{}", help="options JSON passées à l'entraînement")
+    args = ap.parse_args()
+    debut = time.time()
+    options = json.loads(args.options)
+    modeles.module(args.modele).entrainer(args.annees, args.out, **options)
+    meta = {"modele": args.modele, "annees": args.annees, "options": options}
+    (args.out / "modele.json").write_text(json.dumps(meta, indent=2) + "\n")
+    print(f"Entraînement terminé en {time.time() - debut:.0f} s -> {args.out}")
 
 
 if __name__ == "__main__":
