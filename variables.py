@@ -7,11 +7,13 @@ v2 : v1 + fenêtres glissantes passées ET futures (le planning est connu d'avan
 v2r : v2 réduite aux éclipses et communications (fenêtres, depuis/jusqu'à), phase
       orbitale et cos/sin saaf.
 Option etats_dmop : état « dernière commande » de chaque sous-système (dmop_etats.py).
+Option commandes : impulsions et états décalés des commandes AOOO/ATTT (commandes.py).
 Les groupes peuvent être retirés pour les ablations : eclipses, saaf, dmop, ftl, ltdata, orbite.
 """
 import numpy as np
 import pandas as pd
 
+import commandes
 import dmop_etats
 
 FENETRES = (3, 6, 12, 24)  # la fenêtre de 1 h est la valeur horaire elle-même (déjà dans v1)
@@ -20,7 +22,7 @@ PLAFOND_H = 72             # au-delà, « depuis/jusqu'à » est plafonné
 GROUPES = {
     "eclipses": ("evtf_OCC", "evtf_MAR_", "ltdata_eclipseduration", "ltdata_occultationduration", "ecl_"),
     "saaf": ("saaf_",),
-    "dmop": ("dmop_", "dmopetat_"),
+    "dmop": ("dmop_", "dmopetat_", "dmopcmd_", "dmopatmb_", "dmopmasque_"),
     "ftl": ("ftl_",),
     "ltdata": ("ltdata_",),
     "orbite": ("evtf_PERICENTRE", "evtf_APOCENTRE", "orbite_"),
@@ -88,7 +90,7 @@ def ajouter_v2(x, reduite=False):
     return pd.concat([x, pd.DataFrame(nouvelles, index=x.index)], axis=1)
 
 
-def construire(x, version="v1", sans=(), dmop=None, vocabulaire=None):
+def construire(x, version="v1", sans=(), dmop=None, vocabulaire=None, voc_commandes=None):
     """Retourner (tableau float64 (heures, variables), noms des variables).
 
     Avec un vocabulaire dmop (appris sur l'entraînement), ajoute l'état des sous-systèmes
@@ -103,6 +105,9 @@ def construire(x, version="v1", sans=(), dmop=None, vocabulaire=None):
     if vocabulaire:
         etats = dmop_etats.construire(dmop, x.index.to_numpy(), vocabulaire)
         table = pd.concat([table, etats.set_axis(table.index)], axis=1)
+    if voc_commandes:
+        table = pd.concat([table, commandes.construire(dmop, x.index.to_numpy(), voc_commandes)
+                           .set_axis(table.index)], axis=1)
     garder = [c for c in table.columns if not set(groupe_de(c)) & set(sans)]
     table = table[garder]
     valeurs = table.to_numpy(dtype=np.float64)

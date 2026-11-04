@@ -153,3 +153,117 @@ Démo régénérée avec les poids de C2 directe (entraînés sur annee1 seul).
 
 Ablations relancées sur la nouvelle configuration (`ABLATIONS.md`, v1 seul, 2 graines) :
 mémoire +0.0071, saaf +0.0027, dmop +0.0019, éclipses +0.0016. Durée 2495 s.
+
+## Session « commandes » : AOOO, ATTT, ATMB
+
+Même protocole (ensemble mixte complet, 2 membres × 5 graines, 600 pas, deux directions ;
+gardé si la moyenne baisse de plus de 0.0015 sans dégrader aucune direction ; entre 0.0005
+et 0.0015, confirmation avec les graines 5 à 9). Calculs sur GPU T4 Kaggle
+(`lancer_kaggle.py`, deux sessions au plus en parallèle) ; la référence est donc relancée
+sur GPU. Durée = entraînement des deux directions en parallèle sur un même GPU.
+
+Constat de départ : prepare.py ne compte que les 10 commandes dmop les plus fréquentes
+(AAAA, APSF, AVVV) ; les commandes AOOO et ATTT n'arrivent au modèle que fondues dans
+`dmop_other_count`. Or NPWD2881 s'allume avec ATTTF321A et s'éteint avec ATTTF321D ou
+dans l'heure qui précède AOOOF01D0, AOOOF15A0, AOOOF02A1 (annee1 et annee2). Nouveau
+module `commandes.py` : pour chaque commande AOOO/ATTT vue au moins 20 fois à
+l'entraînement, une impulsion (nombre dans l'heure) et un état (1 tant que c'est la
+dernière commande reçue par sa famille, ex. ATTTF321A/D), chacun lu à t + délai, le délai
+(−12 h à +12 h) étant celui qui corrèle le mieux avec NPWD2881 sur l'année
+d'entraînement seule.
+
+| Essai | Changement | RMSE directe | RMSE inverse | Moyenne | Durée |
+|---|---|---:|---:|---:|---|
+| Réf. GPU | Configuration finale actuelle, relancée sur GPU T4 | 0.0851 | 0.0941 | 0.0896 | 465 s |
+| G1 | + impulsions et états décalés des commandes AOOO, en entrée du GRU | 0.0802 | 0.0966 | 0.0884 | 548 s |
+| G1b | Mêmes variables AOOO, mais dans une branche à part : petit réseau heure par heure (32 neurones) dont la sortie s'ajoute au seul NPWD2881 ; le GRU ne les voit pas | 0.0842 | 0.0918 | 0.0880 | 546 s |
+| G2 | Impulsions et états AOOO + ATTT en entrée du GRU (sans branche) | 0.0819 | 0.0951 | 0.0885 | 652 s |
+| **G2b** | **Impulsions et états AOOO + ATTT dans la branche vers NPWD2881 (retenu)** | **0.0832** | **0.0914** | **0.0873** | 651 s |
+| G3b | G2b + regroupement des commandes inconnues de l'entraînement sur la commande connue la plus proche | 0.0827 | 0.0915 | 0.0871 | 655 s |
+| G4 | G2b + consigne ATMBdddK (ddd lu comme un nombre, maintenu jusqu'à la suivante), en entrée du GRU | 0.0843 | 0.0915 | 0.0879 | 653 s |
+| G5 | G2b + masque ATTT305C/305O/305P/306C/306P (1 pendant les K heures suivantes, K = 4 h appris sur NPWD2551), en entrée du GRU | 0.0832 | 0.0921 | 0.0877 | 660 s |
+
+G1 : NPWD2881 gagne dans les deux directions (directe 0.143 → 0.115, inverse 0.173 → 0.143),
+mais en entrée du GRU les commandes AOOO servent aussi à NPWD2451, 2551, 2532, avec des
+relations propres à annee2 : l'inverse se dégrade (2451 : 0.213 → 0.242). La branche
+(G1b) isole l'usage des commandes au circuit visé : les deux directions s'améliorent.
+Ajouter ATTT (ATTTF321A/D allument et éteignent NPWD2881) amplifie le gain : avec G2b,
+NPWD2881 passe de 0.143 à 0.110 en directe et de 0.173 à 0.118 en inverse ; les autres
+circuits bougent à peine. Retenu : −0.0023 sur la moyenne, les deux directions baissent.
+
+G3b (regroupement) : rattachements obtenus sans la puissance, par ressemblance des
+commandes voisines dans la table dmop du test (annee2 : AOOOF01D1 → F01D0, F22R1 → F22A1,
+ATTTF321P/R → F321D, F33A0/F34A0 → F63A0, F32A0/R0 → F02A0, ATTT309B → ATTTF310A…).
+Gain de 0.0005 en directe, rien en inverse (annee1 n'a presque pas de commandes nouvelles
+pour annee2) : −0.0002 sur la moyenne, sous le seuil, non retenu (`regroupement` reste une
+option de `commandes.py`). G4 : l'hypothèse « ATMB = température » n'aide pas. G5 : le
+masque n'existe pas sur annee1 (ATTT305/306 n'apparaissent qu'à partir d'août 2010) : en
+directe la variable est constante à l'entraînement, donc écartée ; en inverse elle est
+apprise mais absente du test. Effet non mesurable ici, et léger bruit en inverse.
+| H1 | G2b, branche avec fenêtre : Conv1d non causale ±6 h sur les commandes au lieu de l'heure t seule | 0.0833 | 0.0912 | 0.0873 | 672 s |
+| H2 | Idem, fenêtre ±12 h | 0.0833 | 0.0916 | 0.0874 | 680 s |
+| H3 | G2b, branche vers les 33 circuits au lieu du seul NPWD2881 | 0.0819 | 0.0935 | 0.0877 | 650 s |
+| H4 | G2b avec impulsions seules (sans états) | 0.0836 | 0.0916 | 0.0876 | 535 s |
+
+H : les délais appris suffisent, une fenêtre ne change rien (H1 : −0.00004). Ouvrir la
+branche à tous les circuits refait l'erreur de G1 en inverse. Les états (ATTTF321A/D)
+comptent : sans eux, +0.0003. G2b devient la configuration par défaut (`monde.py` :
+`commandes` = AOOO + ATTT, `branche_commandes` = NPWD2881).
+| Contrôle | G2b relancé avec la configuration par défaut (aucune option) : identique, l'entraînement GPU est déterministe | 0.0832 | 0.0914 | 0.0873 | 658 s |
+| I1 | G2b + 2e terme de correction de niveau, demi-vie initialisée à 180 jours | 0.0835 | 0.0919 | 0.0877 | 661 s |
+| I2 | G2b, 900 pas et EMA 0.995 | 0.0838 | 0.0929 | 0.0884 | 961 s |
+| I3 | G2b, 10 graines par membre au lieu de 5 | 0.0835 | 0.0908 | 0.0872 | 1287 s |
+| I4 | G2b + correction de niveau sur le résidu : écart moyen entre power_init et la prédiction du simulateur sur ces 7 jours (état nul, sans gradient, borné à ±5), au lieu de l'écart à la moyenne d'entraînement | 0.0829 | 0.0901 | 0.0865 | 650 s |
+| I5 | G2b, lots de 64 épisodes au lieu de 32 | 0.0834 | 0.0920 | 0.0877 | 1279 s |
+| I6 | G2b, la branche lit aussi la sortie du GRU à l'heure t | 0.0835 | 0.0912 | 0.0874 | 648 s |
+| I7 | G2b, taux d'apprentissage 2e-3 au lieu de 3e-3 | 0.0833 | 0.0918 | 0.0876 | 643 s |
+| J1 | G2b, cibles de la branche choisies sur l'entraînement : circuits (écart-type ≥ 0.01) dont la corrélation maximale avec une variable de commande atteint 0.5 (annee1 : 2531 + 2881 ; annee2 : 2881) | 0.0827 | 0.0914 | 0.0870 | 647 s |
+| J2 | J1 + regroupement des commandes nouvelles | 0.0821 | 0.0915 | 0.0868 | 647 s |
+| I4 bis | Confirmation, graines 5 à 9 : G2b | 0.0840 | 0.0905 | 0.0873 | 675 s |
+| **I4 ter** | **Confirmation, graines 5 à 9 : G2b + correction sur le résidu (retenu)** | **0.0833** | **0.0897** | **0.0865** | 680 s |
+
+I4 : la correction de niveau recopiait l'écart de power_init à la moyenne d'entraînement,
+y compris la part que le contexte explique déjà (Soleil, éclipses, saison). Sur le résidu,
+elle ne garde que l'écart inexpliqué. Gain sur les circuits dont le niveau change d'une
+année à l'autre (inverse : 2531 0.240 → 0.229, 2851 0.178 → 0.169). −0.0008 sur les
+graines 0 à 4 et sur les graines 5 à 9, les deux directions baissent à chaque fois :
+retenu (`niveau_residu` = True par défaut).
+| K1 | I4 + cibles de la branche choisies sur l'entraînement (comme J1) | 0.0821 | 0.0901 | 0.0861 | 658 s |
+| K2 | K1 + regroupement des commandes nouvelles | 0.0816 | 0.0902 | 0.0859 | 657 s |
+
+J, K : choisir les cibles de la branche sur l'entraînement ajoute NPWD2531 en directe
+(annee1 : corrélation 0.74 avec les commandes) et ne change rien en inverse (annee2 : 2881
+seul, résultat identique au chiffre près). Gain de 0.0004, sous le seuil de confirmation :
+non retenu. Avec le regroupement, l'inverse remonte de 0.0001 : non retenu non plus,
+bien que la moyenne baisse de 0.0006.
+| L1 | I4 + 2e terme de correction (demi-vie initialisée à 180 jours), sur le résidu | 0.0827 | 0.0892 | 0.0859 | 657 s |
+| L2 | I4, taille 192 au lieu de 128 | 0.0829 | 0.0911 | 0.0870 | 1508 s |
+| **L1 bis** | **Confirmation, graines 5 à 9 : I4 + 2e terme lent (référence I4 ter : 0.0833 / 0.0897 / 0.0865) (retenu)** | **0.0831** | **0.0894** | **0.0862** | 657 s |
+
+L1 : sans le résidu, un second terme lent n'aidait pas (I1 : +0.0004). Sur le résidu, il
+améliore les deux directions sur les graines 0 à 4 (−0.0005) comme sur les graines 5 à 9
+(−0.0003) : gain petit mais retrouvé dans les quatre mesures. Retenu (`niveau_lent` = True).
+| M1 | I4 + l'encodeur lit aussi l'écart heure par heure entre power_init et la prédiction (référence I4) | 0.0831 | 0.0898 | 0.0865 | 684 s |
+| M2 | I4, BPTT par morceaux de 60 jours au lieu de 30 (référence I4) | 0.0827 | 0.0900 | 0.0863 | 1196 s |
+| N1 | L1 + cibles de la branche choisies sur l'entraînement (comme J1, K1) | 0.0820 | 0.0892 | 0.0856 | 651 s |
+| N3 | L1 + bruit 0.2 : sans effet, le membre v1 fixe son bruit à 0.3 dans `mixte.py` (résultat identique à L1) | 0.0827 | 0.0892 | 0.0859 | 657 s |
+
+N1 : troisième mesure du choix automatique des cibles (J1 −0.0003, K1 −0.0004, N1 −0.0003).
+L'inverse est identique par construction (annee2 ne désigne que 2881) : le gain moyen
+reste sous 0.0005, non retenu malgré sa constance en directe.
+| N4 | L1, dropout 0.2 au lieu de 0.1 | 0.0825 | 0.0893 | 0.0859 | 659 s |
+| N5 | L1, EMA 0.995 au lieu de 0.99 | 0.0821 | 0.0897 | 0.0859 | 661 s |
+
+Arrêt : après L1, six essais de suite sans gain retenu (M1, M2 sur la base I4 ; N1, N4, N5 ;
+N3 nul). Configuration finale : ensemble mixte (v1 + bruit 0.3, v2r ; 2 × 5 graines),
+600 pas, EMA 0.99, commandes AOOO + ATTT dans une branche vers NPWD2881, correction de
+niveau sur le résidu avec un terme rapide et un terme lent. Validation (graines 0 à 4) :
+directe 0.0827, inverse 0.0892, moyenne **0.0859**, contre 0.0851 / 0.0941 / 0.0896 au
+départ de la session (−0.0037 ; graines 5 à 9 : 0.0862).
+
+Modèle final (`poids/`) : configuration finale entraînée sur annee1 + annee2 fusionnées
+(`python train.py`, lancé sur GPU T4 Kaggle) : 602 s d'entraînement ; prédiction 20 s sur
+CPU 4 cœurs ; poids 6,9 Mo. La branche vers NPWD2881 lit 71 variables de commandes.
+Démo régénérée avec les poids de L1 directe (entraînés sur annee1 seul, RMSE 0.0827).
+Ablations relancées sur la configuration finale (`ABLATIONS.md`, v1 seul, 2 graines) :
+mémoire +0.0079, dmop +0.0035 (dont branche AOOO/ATTT +0.0019), saaf +0.0028, éclipses −0.0002.

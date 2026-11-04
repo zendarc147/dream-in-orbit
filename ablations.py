@@ -17,6 +17,7 @@ VARIANTES = {
     "complet": {},
     "sans éclipses": {"sans": ["eclipses"]},
     "sans saaf (Soleil)": {"sans": ["saaf"]},
+    "sans commandes AOOO/ATTT (branche vers NPWD2881)": {"commandes": None},
     "sans dmop (commandes)": {"sans": ["dmop"]},
     "sans mémoire (ni encodeur ni GRU)": {"memoire": False},
 }
