@@ -1,7 +1,7 @@
 # Dream in Orbit — world model de la consommation électrique d'un satellite
 
 Un réseau de neurones récurrent apprend comment le satellite réagit à son planning
-(commandes dmop, modes de pointage ftl) et à son contexte (Soleil saaf, événements evtf,
+(commandes dmop, dont les commandes AOOO et ATTT, modes de pointage ftl) et à son contexte (Soleil saaf, événements evtf,
 tendances ltdata), puis simule seul ses 33 circuits heure par heure sur toute une période,
 à partir de ses 7 premiers jours réels (`power_init.csv`). Sujet : `sujet.md`.
 Scores et historique des essais : `RESULTATS.md`. Ablations : `ABLATIONS.md`.
@@ -14,7 +14,8 @@ Scores et historique des essais : `RESULTATS.md`. Ablations : `ABLATIONS.md`.
 | Gradient boosting + recalage sur power_init (`baselines/`) | 0.0951 | 0.0999 | 0.0975 |
 | World model GRU, ensemble de 5 graines (v1 + bruit) | 0.0872 | 0.0971 | 0.0921 |
 | Ensemble mixte de world models GRU (v1 + bruit, v2r ; 2 × 5 graines) | 0.0863 | 0.0964 | 0.0914 |
-| **+ 600 pas avec moyenne exponentielle des poids + correction de niveau de power_init à demi-vie apprise, modèle final** | **0.0853** | **0.0940** | **0.0897** |
+| + 600 pas avec moyenne exponentielle des poids + correction de niveau de power_init à demi-vie apprise | 0.0853 | 0.0940 | 0.0897 |
+| **+ commandes AOOO/ATTT (impulsions et états décalés) dans une branche vers NPWD2881 + correction de niveau sur le résidu (terme rapide + terme lent), modèle final** | **0.0827** | **0.0892** | **0.0859** |
 
 Démo : `demo/reve_contre_realite.png` (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
@@ -70,7 +71,7 @@ python train.py
 
 ### Sur Kaggle depuis le terminal
 
-`lancer_kaggle.py` envoie le dépôt tel qu'il est sur le disque (dataset privé), lance la
+`lancer_kaggle.py` envoie le dépôt tel qu'il est sur le disque, lance la
 commande sur un GPU T4 Kaggle et rapatrie `runs/` dans le dépôt, comme un lancement local.
 Prérequis : `uv tool install kaggle --with six` et un token API Kaggle dans
 `~/.kaggle/access_token` (kaggle.com > Settings > API).
@@ -79,7 +80,12 @@ Prérequis : `uv tool install kaggle --with six` et un token API Kaggle dans
 python lancer_kaggle.py -- valider.py --nom essai --modele gru_mixte
 python lancer_kaggle.py --recuperer poids -- train.py
 python lancer_kaggle.py --sans-attendre -- valider.py --nom essai   # puis : --rapatrier
+python lancer_kaggle.py --fente 2 -- valider.py --nom a ";" valider.py --nom b   # 2e session, 2 essais à la suite
 ```
+
+Le code part dans le script du noyau (quelques centaines de ko) ; le dataset privé ne porte
+que `data/` et `validation/`, envoyés une fois (`--donnees` pour les renvoyer). Kaggle
+accepte deux sessions GPU à la fois (`--fente`).
 
 `kaggle.ipynb` fait la même chose depuis l'interface web (clone GitHub, secret `GITHUB_TOKEN`).
 
@@ -107,7 +113,7 @@ python demo.py --poids runs/NOM/directe --out demo/reve_contre_realite.png
 ## Tests
 
 ```bash
-python -m unittest test_prepare baselines.test_ridge test_predict
+python -m unittest test_prepare baselines.test_ridge test_predict test_commandes
 ```
 
 ## Organisation
@@ -116,8 +122,9 @@ python -m unittest test_prepare baselines.test_ridge test_predict
 |---|---|
 | `prepare.py` | contextes bruts → 65 variables horaires (schéma appris sur annee1) |
 | `variables.py` | variables v2 : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin |
-| `monde.py` | world model GRU (encodeur sur power_init → h0, simulateur 2 couches, tête 33 circuits, correction de niveau de power_init qui s'estompe avec une demi-vie apprise) |
+| `monde.py` | world model GRU (encodeur sur power_init → h0, simulateur 2 couches, tête 33 circuits, correction de niveau de power_init qui s'estompe avec une demi-vie apprise, branche des commandes AOOO/ATTT vers NPWD2881) |
 | `mixte.py` | modèle final : moyenne de deux ensembles de world models (variables v1 et v2r) |
+| `commandes.py` | commandes AOOO et ATTT : impulsions et états décalés (délai appris sur NPWD2881), regroupement des commandes nouvelles, ATMB, masque (options) |
 | `dmop_etats.py` | état « dernière commande » des sous-systèmes dmop (testé, non retenu) |
 | `donnees.py` | chargement des années préparées et des dossiers de test |
 | `train.py`, `predict.py` | entraînement et prédiction (modèle choisi dans `modeles.py`) |

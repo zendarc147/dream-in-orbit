@@ -1,14 +1,18 @@
 """Exécuté sur Kaggle par lancer_kaggle.py, ne pas lancer à la main.
 
-Retrouve la copie du dépôt (dataset attaché), installe les dépendances, recrée
+Retrouve les données (dataset attaché), y dépose le code embarqué (CODE, ajouté en tête de
+ce fichier par lancer_kaggle.py), installe les dépendances, recrée
 validation_inverse/, lance la commande de kaggle_commande.json et copie les dossiers
 demandés dans /kaggle/working (onglet Output, téléchargé par lancer_kaggle.py).
 """
+import base64
 import glob
+import io
 import json
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 DEPOT = Path("/tmp/depot")
@@ -22,11 +26,14 @@ def lancer(*commande):
 
 def copier_depot():
     # Kaggle décompresse parfois les archives d'un dataset : accepter les deux formes.
-    trouves = glob.glob("/kaggle/input/**/kaggle_commande.json", recursive=True)
+    trouves = glob.glob("/kaggle/input/**/data/manifest.json", recursive=True)
     if trouves:
-        shutil.copytree(Path(trouves[0]).parent, DEPOT)
+        shutil.copytree(Path(trouves[0]).parent.parent, DEPOT)
     else:
-        shutil.unpack_archive(glob.glob("/kaggle/input/**/depot.tar.gz", recursive=True)[0], DEPOT)
+        archive = glob.glob("/kaggle/input/**/*.tar.gz", recursive=True)[0]
+        shutil.unpack_archive(archive, DEPOT)
+    with tarfile.open(fileobj=io.BytesIO(base64.b64decode(CODE)), mode="r:gz") as tar:
+        tar.extractall(DEPOT, filter="data")
 
 
 def main():
@@ -40,12 +47,16 @@ def main():
     lancer(sys.executable, "reconstruire_power.py")
     lancer(sys.executable, "make_validation.py", "--annee", "data/annee1", "--out", "validation_inverse")
     try:
-        lancer(sys.executable, *commande["args"])
+        for args in commande.get("commandes", [commande.get("args")]):
+            print("$", *args, flush=True)
+            subprocess.run([sys.executable, *args], cwd=DEPOT)  # un essai raté n'arrête pas les suivants
     finally:
         # Copier même en cas d'échec, pour garder les train.log.
         for dossier in commande["recuperer"]:
-            if (DEPOT / dossier).exists():
+            if (DEPOT / dossier).is_dir():
                 shutil.copytree(DEPOT / dossier, SORTIE / dossier, dirs_exist_ok=True)
+            elif (DEPOT / dossier).is_file():
+                shutil.copy(DEPOT / dossier, SORTIE / dossier)
 
 
 if __name__ == "__main__":
