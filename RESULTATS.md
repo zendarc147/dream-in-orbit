@@ -267,3 +267,165 @@ CPU 4 cœurs ; poids 6,9 Mo. La branche vers NPWD2881 lit 71 variables de comman
 Démo régénérée avec les poids de L1 directe (entraînés sur annee1 seul, RMSE 0.0827).
 Ablations relancées sur la configuration finale (`ABLATIONS.md`, v1 seul, 2 graines) :
 mémoire +0.0079, dmop +0.0035 (dont branche AOOO/ATTT +0.0019), saaf +0.0028, éclipses −0.0002.
+
+## Robustesse temporelle — 5 novembre 2026
+
+### Résultat retenu
+
+Correction limitée à la prédiction : borne du résidu initial portée de 5 à 10
+pour les circuits dont l'écart-type appris sur l'entraînement atteint 0.01.
+Les autres gardent la borne 5. L'entraînement conserve la borne 5 pour tous
+les circuits. Aucun nom de circuit n'intervient dans cette sélection.
+L'option `borne_niveau_prediction=10` est enregistrée dans les nouveaux poids ;
+les anciens poids sans cette option conservent leur comportement.
+
+Comparaisons à poids identiques, avec le même moteur local de prédiction dans
+chaque paire, via `valider.py` dans les deux directions. RMSE recalculées en
+float64 sur les cellules observées ; aucune tolérance de dégradation.
+
+| Graines | Configuration | Directe | Inverse | Moyenne |
+|---|---|---:|---:|---:|
+| 0–4 | Référence | 0.082650974868 | 0.089232548131 | 0.085941761499 |
+| 0–4 | Correction retenue | 0.082650974868 | 0.088056447490 | 0.085353711179 |
+| 5–9 | Référence | 0.083092083967 | 0.089380729336 | 0.086236406651 |
+| 5–9 | Correction retenue | 0.083092083967 | 0.088330858313 | 0.085711471140 |
+
+Les CSV directs sont strictement identiques entre référence et candidat dans
+les deux groupes. L'inverse gagne 0.001176100641 et 0.001049871023. Le gain
+moyen vaut respectivement 0.000588050320 et 0.000524935511.
+
+### Référence et protocole
+
+Uniquement annee1 et annee2, leurs contextes, données préparées et validations.
+Schéma préparé existant autorisé. `evaluate.py` et les exclusions Git locales
+sont inchangés. Courants absents conservés comme NaN ; seule l'initialisation
+fournit des courants aux prédictions. Les commandes planifiées restent utilisables.
+Aucun commit ni push Git.
+
+Sources initiales, empreintes, configuration et poids finaux initiaux conservés
+dans `runs/robustesse_reference/`. Référence GPU reproduite :
+0.082650974925 / 0.089232548081, 600 pas, deux membres de cinq graines.
+Environnement : Tesla T4, PyTorch 2.11.0+cu130, Python 3.13.16, NumPy 2.1.3,
+pandas 2.3.3. Les trois essais d'entraînement ci-dessous utilisent cet environnement.
+La référence CPU reproduite séparément vaut 0.082742 / 0.089392 ; elle n'est
+pas utilisée comme référence numérique des essais GPU.
+
+Pour la correction à la prédiction, chaque paire réutilise exactement les mêmes
+poids et statistiques. Les poids 5–9 existants de `runs/l1_residu_lent_g59/`
+ont été vérifiés : seules les graines diffèrent dans la configuration ; années,
+variables, circuits et commandes correspondent. Les écarts de statistiques avec
+la reproduction récente sont des arrondis (au plus 5.96e-8 sur une moyenne de
+contexte et 1.11e-16 sur les moyennes de courant). Les prédictions des deux
+variantes sont relancées localement ; aucune comparaison croisée GPU/CPU ne
+sert à autoriser une dégradation.
+
+### Diagnostics et hypothèses
+
+`diagnostic_temporel.py` produit RMSE, biais, contribution à la MSE, amplitudes
+observées/prédites, périodes de 30 jours, régimes de consommation, contextes,
+commandes inconnues et modes FTL rares. Les seuils de régime sont les quantiles
+50 et 90 de l'entraînement ; la rareté FTL est définie par une présence inférieure
+à 1 % sur l'entraînement. Les fichiers détaillés sont dans les dossiers
+`runs/robustesse_*/diagnostic/`.
+
+- NPWD2551 et NPWD2451 dominent l'erreur directe. En inverse, NPWD2531 est le
+  deuxième contributeur : écart-type prédit 0.068866 contre 0.240502 observé.
+- Chaque année comporte 16 488 heures. Les épisodes fixes de 365 jours limitent
+  les départs d'initialisation aux jours 0 à 315 ; des épisodes de 30 jours
+  permettent d'aller au jour 650. L'exposition théorique des régimes hauts de
+  NPWD2531 et NPWD2532 sur annee1 vaut 0.487 et 0.524 fois l'exposition moyenne.
+  Ce calcul porte sur des épisodes complets, sans le dernier épisode tronqué.
+- Seul NPWD2881 dépasse une corrélation absolue maximale de 0.5 avec les variables
+  AOOO/ATTT dans chacun des quatre blocs chronologiques, dans les deux années.
+  Les autres corrélations élevées sont localisées : pas de nouvelle branche
+  justifiée. Vocabulaire et délais de ce diagnostic sont appris sur l'année
+  examinée ; ce n'est pas une validation interne indépendante.
+- Couverture SAAF moyenne : 0.9999998 et 0.8019599 ; heures marquées manquantes :
+  0 et 0.0157084. Intervalle maximal entre mesures : 1 minute et 2.616667 heures.
+  Les heures SAAF absentes représentent 1.592733 % des cellules directes et
+  1.936583 % de leur somme d'erreurs quadratiques. RMSE conditionnelle 0.091137,
+  contre 0.081956 avec couverture complète ; ce contraste ne prouve pas une
+  causalité. Aucun prolongement arbitraire des lacunes n'est testé.
+- Les commandes inconnues et modes rares ne montrent pas de dégradation
+  systématique justifiant de reprendre les regroupements déjà rejetés.
+- En inverse, le résidu initial normalisé de NPWD2531 vaut 6.955917 à 7.452016
+  selon membre/graine, avant la borne 5. Les circuits presque constants peuvent
+  produire des résidus de plusieurs centaines ou milliers à cause de leur
+  faible écart-type : ils doivent conserver une protection contre le bruit.
+
+### Essais isolés et décisions
+
+| Essai, graines 0–4 | Directe | Inverse | Entraînement des deux directions | Décision |
+|---|---:|---:|---:|---|
+| Référence GPU | 0.082650974925 | 0.089232548081 | 660 s | Référence |
+| Durée uniforme 30–365 jours | 0.083285081346 | 0.090782809896 | 642 s | Rejet, deux directions dégradées |
+| Borne 10 dès l'entraînement | 0.083008327489 | 0.088279575435 | 671 s | Rejet, directe dégradée |
+| Plancher d'échelle du résidu à 0.01 | 0.082503926153 | 0.089473901138 | 700 s | Rejet, inverse dégradée |
+
+La durée variable dégrade 17 des 24 fenêtres temporelles. La borne 10 réentraînée
+améliore surtout NPWD2531 en inverse, mais le dégrade en directe. Le plancher
+d'échelle réduit l'amplification du bruit des circuits presque constants mais
+échoue au critère inverse. Le code de ces trois essais a été retiré après coup
+(options `jours_sim_min`, `borne_niveau`, `echelle_niveau_min`). Le plancher 0.01
+était un hyperparamètre expérimental, pas une estimation de la précision de mesure.
+
+Le suivi causal conserve donc l'apprentissage de référence et élargit seulement
+la borne à la prédiction, pour les circuits variables selon l'entraînement.
+Le seuil 0.01 est celui déjà utilisé par `circuits_lies`. La sélection des circuits
+ne consulte aucune vérité évaluée ; le résidu ne consulte que les jours initiaux.
+Cette modification est confirmée sur les graines 5–9 avant tout entraînement final.
+
+### Stabilité temporelle et limites
+
+Départs aux jours 0, 120, 300 et 480 de l'année tenue hors apprentissage, avec
+exactement 168 heures d'initialisation. Horizons 30, 90 et 365 jours, tronqués
+à la fin de la période. Chaque modèle a appris exclusivement sur l'autre année ;
+aucune transformation n'est réapprise sur les périodes évaluées. Ces évaluations
+complètent les deux validations officielles sans les remplacer.
+
+Dans chaque groupe de graines : directe, 3 fenêtres améliorées et 9 identiques ;
+inverse, 4 améliorées, 6 identiques et 2 dégradées. Les régressions concernent
+le départ jour 120 en inverse, sur 90 et 365 jours : +0.001696 / +0.000629 pour
+les graines 0–4, +0.000473 / +0.000193 pour les graines 5–9.
+
+| Graines | Direction | Moyenne des 12 RMSE, référence → retenu | Pire RMSE, référence → retenu |
+|---|---|---|---|
+| 0–4 | Directe | 0.074651 → 0.074619 | 0.098765 → 0.098579 |
+| 0–4 | Inverse | 0.086007 → 0.084414 | 0.100398 → 0.094779 |
+| 5–9 | Directe | 0.074716 → 0.074677 | 0.097292 → 0.097050 |
+| 5–9 | Inverse | 0.086012 → 0.084282 | 0.103197 → 0.097740 |
+
+Les fenêtres se chevauchent et ne sont pas des observations indépendantes.
+Le gain n'est pas universel : il concerne surtout l'adaptation initiale en inverse,
+avec les régressions locales explicites ci-dessus.
+
+### Modèle final et vérifications
+
+Choix et empreintes des sources figés dans
+`runs/robustesse_kaggle/final/choix_fige.json` avant l'entraînement final.
+Modèle réentraîné sur annee1 + annee2 fusionnées : 2 membres × 5 graines,
+600 pas, EMA 0.99, branche AOOO/ATTT et correction rapide/lente inchangées.
+Entraînement final GPU : 614.894 s. Poids installés dans `poids/` ; sauvegardes
+antérieures dans `runs/robustesse_reference/poids_final_initiaux/` et
+`runs/robustesse_final/poids_avant_installation/`.
+
+Vérifications distantes et locales : 33 colonnes, 16 319 timestamps exacts,
+aucune valeur non finie, poids finis, années et graines correctes. Prédiction
+locale : 10 s. Le contrôle final ne sert pas à sélectionner le modèle sur un
+score d'entraînement. Empreintes installées : `runs/robustesse_final/poids_installes.json`.
+
+Coût : 3287.894 s cumulées d'entraînement GPU pour référence, trois essais et
+modèle final (environ 55 min, hors prédictions et diagnostics ; sessions en partie
+parallèles). Référence CPU : 1862 s et 24 s de prédiction, précédée d'un lancement
+échoué lors du transfert interprocessus des poids dans le bac à sable. La reprise
+hors de cette restriction a réussi. Les confirmations de la correction réutilisent
+les poids déjà entraînés et ne demandent que des prédictions.
+
+Les lancements Kaggle ont utilisé un dataset privé limité à 21 fichiers autorisés
+(33 400 891 octets), avec vérification d'empreintes. Aucun autre jeu de données
+n'intervient dans l'apprentissage, le choix ou la vérification du modèle.
+
+Après installation : 31 tests réussis (préparation synthétique, prédiction officielle,
+commandes, diagnostics, bornes et compatibilité des poids historiques). Journal :
+`runs/robustesse_final/tests.log`. Audit final des empreintes des sources et poids,
+de la métrique, des exclusions Git et des deux comparaisons de graines réussi.

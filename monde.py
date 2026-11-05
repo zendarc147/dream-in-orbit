@@ -65,6 +65,7 @@ CONFIG_DEFAUT = {
     "niveau_lent": True,     # 2e terme de correction, demi-vie initialisée à 180 jours
     "encodeur_residu": False,  # l'encodeur lit aussi l'écart heure par heure de power_init à la prédiction
     "niveau_residu": True,   # corriger l'écart de power_init à ce que le modèle prédit sur ces 7 jours
+    "borne_niveau_prediction": 10.0,  # borne élargie seulement à la prédiction, circuits variables à l'entraînement
     "continu": True,         # années contiguës fusionnées : les épisodes traversent la frontière
     "ema": 0.99,             # décroissance de la moyenne exponentielle des poids (0 : pas de moyenne)
     "graines": [0, 1, 2, 3, 4],
@@ -106,6 +107,7 @@ class MondeGRU(nn.Module):
         # Correction sur le résidu : y_stats = (moyenne, écart) des courants, pour comparer
         # power_init (normalisé) à la prédiction du modèle sur les mêmes heures.
         self.residu = y_stats is not None
+        self.borne_niveau = 5.0  # élargie par circuit au chargement (borne_niveau_prediction)
         self.encodeur_residu = encodeur_residu and self.residu  # l'encodeur lit aussi ces écarts heure par heure
         if self.residu:
             assert memoire and not conv and not statique, "niveau_residu : GRU simple seulement"
@@ -186,7 +188,8 @@ class MondeGRU(nn.Module):
         n = y_init.shape[-1] // 2
         masque = y_init[..., n:]
         # Borné comme les entrées : un circuit presque constant a un écart-type minuscule.
-        residu = (self.ecarts_init(x_init, y_init).sum(dim=1) / masque.sum(dim=1).clamp(min=1)).clamp(-5, 5)
+        residu = (self.ecarts_init(x_init, y_init).sum(dim=1) / masque.sum(dim=1).clamp(min=1))
+        residu = residu.clamp(-self.borne_niveau, self.borne_niveau)
         return torch.cat([residu, resume[:, n:]], dim=-1)
 
     @torch.no_grad()
@@ -458,6 +461,13 @@ def charger(dossier):
                       config.get("niveau_lent", False), y_stats(config, stats),
                       config.get("encodeur_residu", False))
         modele.load_state_dict({k: v.float() for k, v in etat.items()})
+        if config.get("borne_niveau_prediction") is not None:
+            borne = float(config["borne_niveau_prediction"])
+            if not np.isfinite(borne) or borne < modele.borne_niveau:
+                raise ValueError("borne_niveau_prediction doit être finie et au moins égale à 5")
+            # Même seuil de variabilité que circuits_lies ; aucune consommation future.
+            modele.borne_niveau = torch.where(torch.as_tensor(stats["y_ecart"]) >= .01,
+                                               borne, modele.borne_niveau).float()
         modeles.append(modele.eval())
     return paquet, config, stats, modeles
 
