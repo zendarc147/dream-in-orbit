@@ -1,5 +1,9 @@
 # Ablations du world model
 
+Mesures historiques, avant l'élargissement de la borne du résidu à la prédiction.
+Elles n'ont pas été relancées pour cette correction ; ses validations et limites
+temporelles figurent dans `RESULTATS.md`.
+
 Configuration de base : `{"graines": [0, 1]}`
 
 | Variante | RMSE directe | RMSE inverse | Écart vs complet |

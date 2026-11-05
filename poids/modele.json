@@ -4,5 +4,14 @@
     "annee1",
     "annee2"
   ],
-  "options": {}
+  "options": {
+    "borne_niveau_prediction": 10.0,
+    "graines": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  }
 }

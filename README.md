@@ -15,7 +15,14 @@ Scores et historique des essais : `RESULTATS.md`. Ablations : `ABLATIONS.md`.
 | World model GRU, ensemble de 5 graines (v1 + bruit) | 0.0872 | 0.0971 | 0.0921 |
 | Ensemble mixte de world models GRU (v1 + bruit, v2r ; 2 × 5 graines) | 0.0863 | 0.0964 | 0.0914 |
 | + 600 pas avec moyenne exponentielle des poids + correction de niveau de power_init à demi-vie apprise | 0.0853 | 0.0940 | 0.0897 |
-| **+ commandes AOOO/ATTT (impulsions et états décalés) dans une branche vers NPWD2881 + correction de niveau sur le résidu (terme rapide + terme lent), modèle final** | **0.0827** | **0.0892** | **0.0859** |
+| + commandes AOOO/ATTT (impulsions et états décalés) dans une branche vers NPWD2881 + correction de niveau sur le résidu (terme rapide + terme lent) | 0.0827 | 0.0892 | 0.0859 |
+| **+ borne du résidu initial élargie seulement à la prédiction pour les circuits variables à l'entraînement, modèle final** | **0.0827** | **0.0881** | **0.0854** |
+
+La borne reste à 5 pendant l'entraînement. À la prédiction, elle passe à 10 si
+l'écart-type appris du circuit atteint 0.01 ; les circuits presque constants
+gardent 5. Gain confirmé sur les graines 5–9, sans changement de la validation
+directe. Les départs décalés améliorent la moyenne et le pire cas, mais deux
+fenêtres inverses se dégradent légèrement : détail dans `RESULTATS.md`.
 
 Démo : `demo/reve_contre_realite.png` (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
@@ -113,7 +120,7 @@ python demo.py --poids runs/NOM/directe --out demo/reve_contre_realite.png
 ## Tests
 
 ```bash
-python -m unittest test_prepare baselines.test_ridge test_predict test_commandes
+python -m unittest test_prepare baselines.test_ridge test_predict test_commandes test_niveau test_diagnostic_temporel
 ```
 
 ## Organisation
