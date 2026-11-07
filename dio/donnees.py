@@ -53,8 +53,8 @@ def lire_dossier_test(test_dir, schema=None):
     if y_init.index[-1] >= a_predire[0]:
         raise ValueError("power_init empiète sur les heures à prédire")
     heures = prepare.verifier_heures(range(int(y_init.index[0]), int(a_predire[-1]) + H, H))
-    tables, _ = prepare.lire_contextes(dossier)
-    x, _ = prepare.construire_entrees(tables, heures, schema)
+    tables = prepare.lire_contextes(dossier)
+    x = prepare.construire_entrees(tables, heures, schema)
     x = prepare.remplir_entrees(x, schema)
     y = np.full((len(heures), len(schema["target_columns"])), np.nan)
     y[: len(y_init)] = y_init.to_numpy(dtype=np.float64)

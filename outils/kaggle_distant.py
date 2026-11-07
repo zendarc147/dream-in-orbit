@@ -2,7 +2,7 @@
 
 Retrouve les données (dataset attaché), y dépose le code embarqué (CODE, ajouté en tête de
 ce fichier par lancer_kaggle.py), installe les dépendances, recrée
-validation_inverse/, lance la commande de kaggle_commande.json et copie les dossiers
+validation/ et validation_inverse/, lance la commande de kaggle_commande.json et copie les dossiers
 demandés dans /kaggle/working (onglet Output, téléchargé par lancer_kaggle.py).
 """
 import base64
@@ -45,6 +45,7 @@ def main():
     lancer(sys.executable, "-c", "import sys, torch; print(sys.version, 'torch', torch.__version__,"
            " 'cuda', torch.cuda.is_available() and torch.cuda.get_device_name(0))")
     lancer(sys.executable, "outils/reconstruire_power.py")
+    lancer(sys.executable, "make_validation.py", "--annee", "data/annee2", "--out", "validation")
     lancer(sys.executable, "make_validation.py", "--annee", "data/annee1", "--out", "validation_inverse")
     try:
         for args in commande.get("commandes", [commande.get("args")]):

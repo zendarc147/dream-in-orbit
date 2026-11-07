@@ -47,7 +47,7 @@ def verifier_heures(heures):
 
 
 def lire_contextes(dossier):
-    tables, bilan = {}, {}
+    tables = {}
     for nom in CONTEXTES:
         table = pd.read_csv(Path(dossier) / f"{nom}.csv")
         if table.columns.tolist() != COLONNES[nom]:
@@ -77,14 +77,7 @@ def lire_contextes(dossier):
             if nom == "ltdata" and (table.ut_ms % JOUR != 0).any():
                 raise ValueError("ltdata : une ligne doit commencer à minuit UTC")
         tables[nom] = table
-        bilan[nom] = {
-            "lignes": len(table), "cellules_manquantes": int(table.isna().sum().sum()),
-            "doublons_ligne": int(table.duplicated().sum()),
-            "timestamps_repetes": int(table[temps].duplicated().sum()),
-            "debut_ms": int(table[temps].min()) if len(table) else None,
-            "fin_ms": int(table[temps].max()) if len(table) else None,
-        }
-    return tables, bilan
+    return tables
 
 
 def cibles_horaires(chemin, colonnes=None):
@@ -223,7 +216,7 @@ def preparer_dmop(table, heures, schema):
 def apparier_evenements(temps, marqueurs, heures):
     """Conserver les paires certaines et marquer les portions ambiguës inconnues."""
     debuts, fins, inconnus_debut, inconnus_fin = [], [], [], []
-    debut, ambigu, derniere_fin, anomalies = None, False, None, 0
+    debut, ambigu, derniere_fin = None, False, None
     for instant, marqueur in zip(temps, marqueurs):
         instant = int(instant)
         if marqueur == "START":
@@ -231,18 +224,14 @@ def apparier_evenements(temps, marqueurs, heures):
                 debut = instant
             else:
                 ambigu = True
-                anomalies += 1
         elif debut is None:
             inconnus_debut.append(heures[0] if derniere_fin is None else derniere_fin)
             inconnus_fin.append(instant)
             derniere_fin = instant
-            anomalies += 1
         else:
             if ambigu or instant <= debut:
                 inconnus_debut.append(debut)
                 inconnus_fin.append(max(instant, debut + 1))
-                if instant <= debut:
-                    anomalies += 1
             else:
                 debuts.append(debut)
                 fins.append(instant)
@@ -250,11 +239,10 @@ def apparier_evenements(temps, marqueurs, heures):
     if debut is not None:
         inconnus_debut.append(debut)
         inconnus_fin.append(heures[-1] + H)
-        anomalies += 1
     durees = durees_union(heures, debuts, fins)
     inconnues = durees_union(heures, inconnus_debut, inconnus_fin) > 0
     durees[inconnues] = np.nan
-    return durees, inconnues.astype(int), anomalies
+    return durees, inconnues.astype(int)
 
 
 def preparer_evtf(table, heures, schema):
@@ -269,17 +257,15 @@ def preparer_evtf(table, heures, schema):
     autres = marqueurs.notna() & ~familles.isin(schema["evtf_intervals"])
     x["evtf_other_boundary_count"] = compter(table.loc[autres, "ut_ms"], heures)
     x["evtf_outside_recorded_range"] = hors_plage(table.ut_ms, heures)
-    anomalies = {}
     for famille in schema["evtf_intervals"]:
         selection = familles.eq(famille) & marqueurs.notna()
-        durees, inconnues, nombre = apparier_evenements(table.ut_ms[selection], marqueurs[selection], heures)
+        durees, inconnues = apparier_evenements(table.ut_ms[selection], marqueurs[selection], heures)
         if table.empty:
             durees[:] = np.nan
             inconnues[:] = 1
         x[f"evtf_{famille}_minutes"] = durees
         x[f"evtf_{famille}_unknown"] = inconnues
-        anomalies[famille] = nombre
-    return x, anomalies
+    return x
 
 
 def preparer_saaf(table, heures, schema):
@@ -316,17 +302,16 @@ def preparer_ltdata(table, heures):
 def construire_entrees(tables, heures, schema):
     """X brut : cinq contextes, aucune consommation ni statistique de consommation."""
     heures = verifier_heures(heures)
-    evenements, anomalies = preparer_evtf(tables["evtf"], heures, schema)
     x = pd.concat([
         preparer_ftl(tables["ftl"], heures, schema),
         preparer_dmop(tables["dmop"], heures, schema),
-        evenements,
+        preparer_evtf(tables["evtf"], heures, schema),
         preparer_saaf(tables["saaf"], heures, schema),
         preparer_ltdata(tables["ltdata"], heures),
     ], axis=1)
     if x.columns.duplicated().any() or np.isinf(x.to_numpy(dtype=float)).any():
         raise ValueError("X : colonnes dupliquées ou valeur infinie")
-    return x, anomalies
+    return x
 
 
 def remplir_entrees(x, schema):
@@ -338,33 +323,14 @@ def remplir_entrees(x, schema):
     return x
 
 
-def enregistrer(dossier, x_brut, schema, bilan_sources, anomalies, y=None, nom_cible="y.csv"):
+def enregistrer(dossier, x_brut, schema, y=None, nom_cible="y.csv"):
     x = remplir_entrees(x_brut, schema)
     dossier = Path(dossier)
     dossier.mkdir(parents=True, exist_ok=True)
     x.to_csv(dossier / "X.csv")
     if y is not None:
         y.to_csv(dossier / nom_cible)
-    bilan = {
-        "X_dimensions_csv": [len(x), len(x.columns) + 1],
-        "X_debut_ms": int(x.index[0]), "X_fin_ms": int(x.index[-1]),
-        "X_cellules_remplies": int(x_brut.isna().sum().sum()),
-        "X_manquants_avant_remplissage": {c: int(n) for c, n in x_brut.isna().sum().items() if n},
-        "X_manquants_apres_remplissage": int(x.isna().sum().sum()),
-        "X_infinis": int(np.isinf(x.to_numpy(dtype=float)).sum()),
-        "X_timestamps_dupliques": int(x.index.duplicated().sum()),
-        "sources": bilan_sources,
-        "evtf_paires_anormales": anomalies,
-    }
-    if y is not None:
-        bilan["cibles"] = {
-            "fichier": nom_cible, "dimensions_csv": [len(y), len(y.columns) + 1],
-            "heures_sans_courant": int(y.isna().all(axis=1).sum()),
-            "cellules_inconnues": int(y.isna().sum().sum()),
-        }
-    (dossier / "bilan.json").write_text(json.dumps(bilan, indent=2, allow_nan=False) + "\n")
-    print(f"{dossier} : X {len(x)} x {len(x.columns) + 1}, {bilan['X_cellules_remplies']} cellules remplies")
-    return bilan
+    print(f"{dossier} : X {len(x)} x {len(x.columns) + 1}, {int(x_brut.isna().sum().sum())} cellules remplies")
 
 
 def preparer_periodes(data_dir, out):
@@ -373,12 +339,12 @@ def preparer_periodes(data_dir, out):
     for periode in ("annee1", "annee2"):
         dossier = Path(data_dir) / periode
         y = cibles_horaires(dossier / "power.csv", None if schema is None else schema["target_columns"])
-        tables, bilan = lire_contextes(dossier)
+        tables = lire_contextes(dossier)
         if schema is None:
             if len(y.columns) != 33:
                 raise ValueError("33 circuits sont requis")
             schema = apprendre_categories(tables, y.columns.tolist())
-        x, anomalies = construire_entrees(tables, y.index, schema)
+        x = construire_entrees(tables, y.index, schema)
         if periode == "annee1":
             schema["feature_columns"] = x.columns.tolist()
             medianes = x.median()
@@ -387,7 +353,7 @@ def preparer_periodes(data_dir, out):
             schema["fill_values"] = medianes.to_dict()
             out.mkdir(parents=True, exist_ok=True)
             (out / "schema.json").write_text(json.dumps(schema, indent=2, allow_nan=False) + "\n")
-        enregistrer(out / periode, x, schema, bilan, anomalies, y)
+        enregistrer(out / periode, x, schema, y)
 
 
 def preparer_test(test_dir, schema_path, out):
@@ -397,12 +363,12 @@ def preparer_test(test_dir, schema_path, out):
     if heures_csv.columns.tolist() != ["ut_ms"]:
         raise ValueError("heures_a_predire : seule la colonne ut_ms est attendue")
     heures = verifier_heures(heures_csv.ut_ms)
-    tables, bilan = lire_contextes(dossier)
-    x, anomalies = construire_entrees(tables, heures, schema)
+    tables = lire_contextes(dossier)
+    x = construire_entrees(tables, heures, schema)
     y_init = cibles_horaires(dossier / "power_init.csv", schema["target_columns"])
     if y_init.index[-1] >= heures[0]:
         raise ValueError("power_init empiète sur les heures à prédire")
-    return enregistrer(out, x, schema, bilan, anomalies, y_init, "y_init.csv")
+    enregistrer(out, x, schema, y_init, "y_init.csv")
 
 
 def main():

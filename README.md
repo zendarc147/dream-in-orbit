@@ -91,7 +91,7 @@ python outils/lancer_kaggle.py --fente 2 -- outils/valider.py --nom a ";" outils
 ```
 
 Le code part dans le script du noyau (quelques centaines de ko) ; le dataset privé ne porte
-que `data/` et `validation/`, envoyés une fois (`--donnees` pour les renvoyer). Kaggle
+que `data/`, envoyé une fois (`--donnees` pour les renvoyer). Kaggle
 accepte deux sessions GPU à la fois (`--fente`).
 
 ## Valider
@@ -100,6 +100,7 @@ Deux directions, toujours via `train.py` → `predict.py` → `evaluate.py` :
 
 ```bash
 python outils/reconstruire_power.py   # recrée data/annee*/power.csv depuis data/prepared si absent
+python make_validation.py --annee data/annee2 --out validation
 python make_validation.py --annee data/annee1 --out validation_inverse
 python outils/valider.py --nom essai --modele gru
 ```
@@ -140,7 +141,6 @@ outils/                          validation, ablations, démo, diagnostics, lanc
 tests/                           tests unitaires
 poids/                           poids du modèle final
 data/                            kit (annee1, annee2) et données horaires préparées
-validation/                      dossier de test de la validation directe (annee2)
 docs/                            sujet, journal des résultats, ablations, rapport, exploration, démo
 ```
 

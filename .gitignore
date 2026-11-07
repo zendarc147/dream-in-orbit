@@ -7,3 +7,4 @@ __pycache__/
 /data/annee2/power.csv
 runs/
 validation_inverse/
+validation/

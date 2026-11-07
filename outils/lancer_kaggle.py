@@ -8,7 +8,7 @@
     python outils/lancer_kaggle.py -- outils/valider.py --nom a ";" outils/valider.py --nom b   # à la suite, une session
 
 Le dépôt tel qu'il est sur le disque (fichiers suivis et non suivis, hors .gitignore) part
-sur Kaggle : les données (data/, validation/) dans le dataset privé
+sur Kaggle : les données (data/) dans le dataset privé
 UTILISATEUR/dream-in-orbit-code, envoyé une fois (--donnees pour le renvoyer ; Kaggle peut
 mettre quelques minutes à servir la nouvelle version), et le code dans le script du noyau
 lui-même, donc toujours à jour. outils/kaggle_distant.py lance la ou les commandes, puis les
@@ -33,7 +33,7 @@ UTILISATEUR = "zendarc147"
 DATASET = f"{UTILISATEUR}/dream-in-orbit-code"
 NOYAU = f"{UTILISATEUR}/dream-in-orbit"
 INUTILES = ("docs/",)
-DONNEES = ("data/", "validation/")
+DONNEES = ("data/",)
 
 
 def fente(numero):
@@ -72,7 +72,7 @@ def fichiers_depot():
 
 
 def envoyer_donnees(dossier, forcer):
-    """Dataset privé des données (data/, validation/) : envoyé une fois, ou avec --donnees."""
+    """Dataset privé des données (data/) : envoyé une fois, ou avec --donnees."""
     if not forcer and not kaggle("datasets", "status", DATASET, verifier=False).returncode:
         return
     with tarfile.open(dossier / "donnees.tar.gz", "w:gz") as tar:
@@ -139,7 +139,7 @@ def main():
     ap.add_argument("--recuperer", nargs="+", default=["runs"], help="dossiers ou fichiers rapatriés (défaut : runs)")
     ap.add_argument("--sans-attendre", action="store_true", help="lancer sans attendre la fin")
     ap.add_argument("--rapatrier", action="store_true", help="attendre le dernier lancement et rapatrier")
-    ap.add_argument("--donnees", action="store_true", help="renvoyer data/ et validation/ (après un changement)")
+    ap.add_argument("--donnees", action="store_true", help="renvoyer data/ (après un changement)")
     ap.add_argument("--fente", default="", help="numéro de fente pour lancer en parallèle (défaut : aucune)")
     ap.add_argument("args", nargs="*", help="script et arguments, après --")
     a = ap.parse_args()

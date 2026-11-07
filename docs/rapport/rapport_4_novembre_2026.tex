@@ -119,7 +119,7 @@ NPWD2451 & 0.645 & 0.685 & $+0.040$ \\
   \item inverse : entraînement sur annee2, simulation de annee1\\
   (dossier \code{validation\_inverse/}).
 \end{itemize}
-Le score de référence est la moyenne des deux RMSE. La seconde direction écarte les réglages qui ne marchent que dans un sens ; le recalage constant du boosting (section~3.2) en est un exemple. Chaque essai passe par la chaîne complète \code{train.py}, \code{predict.py}, \code{evaluate.py} (script \code{valider.py}), jamais par un découpage aléatoire des heures.
+Le score de référence est la moyenne des deux RMSE. La seconde direction écarte les réglages qui ne marchent que dans un sens ; le recalage constant du boosting (section~3.2) en est un exemple. Chaque essai passe par la chaîne complète \code{train.py}, \code{predict.py}, \code{evaluate.py} (script \code{outils/valider.py}), jamais par un découpage aléatoire des heures.
 
 Un changement n'est gardé que s'il fait baisser la moyenne. J'ai mesuré le bruit dû à la graine aléatoire sur le premier world model : environ 0.0015 sur la moyenne. Pendant la dernière session, la règle est devenue plus stricte : gain d'au moins 0.0015 sans dégrader aucune direction, ou confirmation sur une seconde série de graines (5 à 9) quand le gain est compris entre 0.0005 et 0.0015.
 
@@ -128,11 +128,11 @@ Un changement n'est gardé que s'il fait baisser la moyenne. J'ai mesuré le bru
 
 \subsection{Préparation horaire des contextes}
 
-\code{prepare.py} transforme les cinq fichiers de contexte en 65 variables horaires. Le schéma (codes retenus, valeurs de remplissage) est appris sur annee1 puis réutilisé tel quel sur toute autre période. Aucun courant, même initial, n'entre dans ces variables.
+\code{dio/prepare.py} transforme les cinq fichiers de contexte en 65 variables horaires. Le schéma (codes retenus, valeurs de remplissage) est appris sur annee1 puis réutilisé tel quel sur toute autre période. Aucun courant, même initial, n'entre dans ces variables.
 
 \begin{table}[!htb]
 \centering\small
-\caption{Les 65 variables horaires produites par \code{prepare.py}.}
+\caption{Les 65 variables horaires produites par \code{dio/prepare.py}.}
 \label{tab:variables}
 \begin{tabularx}{\linewidth}{l r X}
 \toprule
@@ -293,7 +293,7 @@ Un épisode tire au hasard un point de départ, puis prend 7 jours de démarrage
 
 \begin{table}[!htb]
 \centering\small
-\caption{Réglages d'entraînement (\code{monde.py}, \code{CONFIG\_DEFAUT}).}
+\caption{Réglages d'entraînement (\code{dio/monde.py}, \code{CONFIG\_DEFAUT}).}
 \label{tab:hyper}
 \begin{tabularx}{\linewidth}{l X}
 \toprule
@@ -418,7 +418,7 @@ Chaque ablation retire un groupe d'entrées ou la mémoire, et réentraîne le m
 
 \begin{table}[!htb]
 \centering\small
-\caption{Ablations (\code{ablations.py}, détail dans \code{ABLATIONS.md}).}
+\caption{Ablations (\code{outils/ablations.py}, détail dans \code{docs/ABLATIONS.md}).}
 \label{tab:ablations}
 \begin{tabular}{l r r r}
 \toprule
@@ -463,13 +463,13 @@ Environnement : Python 3.13, \code{uv sync} (ou \code{pip install -r requirement
 \begin{verbatim}
 python train.py                                   # modèle final -> poids/
 python predict.py --test_dir DOSSIER --out predictions.csv
-python valider.py --nom essai --modele gru_mixte  # directe + inverse
-python ablations.py
-python demo.py --poids runs/c2_niveau_600/directe --out demo/reve_contre_realite.png
-python rapport/figures.py --preds DOSSIER_PREDICTIONS   # figures de ce rapport
+python outils/valider.py --nom essai --modele gru_mixte   # directe + inverse
+python outils/ablations.py
+python outils/demo.py --poids runs/c2_niveau_600/directe
+python docs/rapport/figures.py --preds DOSSIER_PREDICTIONS   # figures de ce rapport
 \end{verbatim}
 \end{small}
 
-Le journal complet des essais, avec les durées, est dans \code{RESULTATS.md}.
+Le journal complet des essais, avec les durées, est dans \code{docs/RESULTATS.md}.
 
 \end{document}

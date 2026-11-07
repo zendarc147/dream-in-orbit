@@ -30,7 +30,7 @@ def petits_contextes():
 
 def petit_schema(tables, heures):
     schema = p.apprendre_categories(tables, ["NPWD1", "NPWD2"])
-    x, _ = p.construire_entrees(tables, heures, schema)
+    x = p.construire_entrees(tables, heures, schema)
     schema["feature_columns"] = x.columns.tolist()
     schema["fill_values"] = x.median().to_dict()
     return schema
@@ -92,21 +92,19 @@ class PreparationTest(unittest.TestCase):
         heures = p.verifier_heures([0, p.H, 2 * p.H])
         table = pd.DataFrame({"ut_ms": [0, p.H, 2 * p.H, 2 * p.H],
                               "description": ["CODE_START", "POINT_NOUVEAU", "CODE_END", "AUTRE_START"]})
-        x, anomalies = p.preparer_evtf(table, heures, {"evtf_intervals": ["CODE"]})
+        x = p.preparer_evtf(table, heures, {"evtf_intervals": ["CODE"]})
         np.testing.assert_allclose(x.evtf_CODE_minutes, [60, 60, 0])
         np.testing.assert_array_equal(x.evtf_point_count, [0, 1, 0])
         np.testing.assert_array_equal(x.evtf_start_count, [1, 0, 1])
         np.testing.assert_array_equal(x.evtf_end_count, [0, 0, 1])
         np.testing.assert_array_equal(x.evtf_other_boundary_count, [0, 0, 1])
-        self.assertEqual(anomalies, {"CODE": 0})
 
     def test_evtf_orphelins_et_debuts_repetes_inconnus(self):
         heures = p.verifier_heures(range(0, 4 * p.H, p.H))
         temps = [p.H // 2, p.H, 3 * p.H // 2, 2 * p.H, 5 * p.H // 2]
-        durees, inconnu, nombre = p.apparier_evenements(temps, ["END", "START", "START", "END", "START"], heures)
+        durees, inconnu = p.apparier_evenements(temps, ["END", "START", "START", "END", "START"], heures)
         self.assertTrue(np.isnan(durees).all())
         np.testing.assert_array_equal(inconnu, [1, 1, 1, 1])
-        self.assertEqual(nombre, 3)
 
     def test_saaf_moyenne_ponderee_et_pas_moyenne_des_lignes(self):
         table = pd.DataFrame({"ut_ms": [0, 10_000, 60_000],
@@ -142,7 +140,7 @@ class PreparationTest(unittest.TestCase):
         schema = petit_schema(tables, heures)
         schema_avant = json.dumps(schema, sort_keys=True)
         vides = {nom: table.iloc[:0].copy() for nom, table in tables.items()}
-        x, _ = p.construire_entrees(vides, heures, schema)
+        x = p.construire_entrees(vides, heures, schema)
         self.assertTrue(x.saaf_sa_mean.isna().all())
         self.assertTrue(x.evtf_CODE_minutes.isna().all())
         rempli = p.remplir_entrees(x, schema)

@@ -4,8 +4,9 @@
     python outils/valider.py --nom e1_boosting --sans-entrainement --options-prediction '{"recalage": 1.0}'
 
 Directe : entraînement sur annee1, test sur validation/ (annee2).
-Inverse : entraînement sur annee2, test sur validation_inverse/ (annee1),
-dossier créé par : python make_validation.py --annee data/annee1 --out validation_inverse
+Inverse : entraînement sur annee2, test sur validation_inverse/ (annee1).
+Dossiers créés par : python make_validation.py --annee data/annee2 --out validation
+                     python make_validation.py --annee data/annee1 --out validation_inverse
 Score de référence = moyenne des deux RMSE.
 """
 import argparse
