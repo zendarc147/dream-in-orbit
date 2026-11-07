@@ -194,8 +194,9 @@ class PreparationTest(unittest.TestCase):
             self.assertFalse(lecture(dossier / "sortie1/y_init.csv").equals(lecture(dossier / "sortie2/y_init.csv")))
 
 
-@unittest.skipUnless((RACINE / "data/prepared/annee2/y.csv").is_file(),
-                     "Exécuter d'abord python prepare.py --data-dir data --out data/prepared")
+@unittest.skipUnless((RACINE / "data/prepared/annee2/y.csv").is_file()
+                     and all((RACINE / "data" / periode / "power.csv").is_file() for periode in ("annee1", "annee2")),
+                     "Exécuter d'abord python outils/reconstruire_power.py (power.csv n'est pas versionné)")
 class DonneesLocalesTest(unittest.TestCase):
     def test_deux_periodes_reference_officielle_et_format_test(self):
         proteges = list((RACINE / "data").glob("annee*/*.csv"))
