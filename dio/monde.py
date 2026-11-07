@@ -42,6 +42,8 @@ CONFIG_DEFAUT = {
     "sans": [],              # groupes de variables retirés (ablations)
     "memoire": True,         # False : ni encodeur ni récurrence ni correction de niveau (ablation)
     "bruit": 0.3,            # écart-type du bruit gaussien ajouté aux entrées normalisées (entraînement)
+    "masque_saaf": 0.0,      # part des heures d'une copie de chaque période où SAAF est masqué par blocs (0 : pas de copie)
+    "abandon_etats": 0.0,    # probabilité de mettre à 0 toutes les variables dmopcmd_etat_* d'un épisode (entraînement)
     "taille": 128,
     "couches": 2,
     "dropout": 0.1,
@@ -189,6 +191,37 @@ class MondeGRU(nn.Module):
         return self.simuler(x_sim, self.etat_initial(x_init, y_init), self.resume_niveau(x_init, y_init))[0]
 
 
+def masquer_saaf(x, schema, fraction, graine=0):
+    """Copie de la table horaire où des blocs contigus (1 à 720 h, longueur log-uniforme)
+    couvrant `fraction` des heures ressemblent à une panne de télémétrie SAAF : valeurs de
+    remplissage du schéma, couverture 0, indicateur manquant à 1."""
+    x = x.copy()
+    rng = np.random.default_rng(graine)
+    n, cible = len(x), int(round(fraction * len(x)))
+    masque = np.zeros(n, dtype=bool)
+    while masque.sum() < cible:
+        # Dernier bloc raccourci pour ne pas dépasser la fraction demandée.
+        longueur = min(int(round(np.exp(rng.uniform(0.0, np.log(720.0))))), cible - int(masque.sum()), n)
+        debut = rng.integers(0, n - longueur + 1)
+        masque[debut:debut + longueur] = True
+    for colonne in [c for c in x.columns if c.startswith("saaf_")]:
+        x.loc[masque, colonne] = schema["fill_values"][colonne]
+    x.loc[masque, "saaf_coverage_fraction"] = 0.0
+    x.loc[masque, "saaf_missing"] = 1
+    return x
+
+
+def abandonner_etats(x, etats, probabilite):
+    """Mettre à 0 (espace normalisé), ensemble et sur tout l'épisode, les variables d'état
+    des commandes d'une partie des épisodes du lot x (B, T, F). Entraînement seulement."""
+    if not probabilite or not etats:
+        return x
+    garde = (torch.rand(x.shape[0], 1, 1, device=x.device) >= probabilite).to(x.dtype)
+    x = x.clone()
+    x[..., etats] = x[..., etats] * garde
+    return x
+
+
 def normaliser_courants(y, moyenne, ecart):
     """Courants normalisés (NaN -> 0) concaténés à leur masque de présence."""
     connus = np.isfinite(y)
@@ -214,11 +247,16 @@ def preparer_annees(annees, config):
     if config.get("commandes") is not None:
         voc_commandes = commandes.apprendre([(dmop, heures, y) for heures, _, y, dmop in blocs],
                                             schema["target_columns"], config["commandes"])
-    periodes = []
-    for _, x, y, dmop in blocs:
+    periodes, copies = [], []
+    for i, (_, x, y, dmop) in enumerate(blocs):
         f, noms = variables.construire(x, config["variables"], config["sans"], dmop, voc_commandes)
         periodes.append((f, y))
-    return schema, periodes, noms, voc_commandes
+        if config.get("masque_saaf", 0.0) > 0:
+            # Copie masquée en plus de l'originale ; les statistiques ne voient que les originales.
+            x_masque = masquer_saaf(x, schema, config["masque_saaf"], graine=i)
+            copies.append((variables.construire(x_masque, config["variables"], config["sans"], dmop,
+                                                voc_commandes)[0], y))
+    return schema, periodes, noms, voc_commandes, copies
 
 
 def entrainer_un(periodes, stats, config, graine, n_circuits):
@@ -254,6 +292,7 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
             xs.append(f[s:s + ti + sim])
             ys.append(y[s:s + ti + sim])
         x = torch.as_tensor(normaliser_entrees(np.stack(xs), stats), dtype=torch.float32, device=appareil)
+        x = abandonner_etats(x, config.get("_etats", []), config.get("abandon_etats", 0.0))
         if config.get("bruit", 0.0):
             # Régularisation : le modèle ne doit pas dépendre d'une valeur d'entrée exacte.
             x = x + config["bruit"] * torch.randn_like(x)
@@ -302,7 +341,7 @@ def _entrainer_graine(arguments):
 def entrainer(annees, dossier, **options):
     config = {**CONFIG_DEFAUT, **options}
     torch.set_num_threads(int(os.environ.get("MONDE_THREADS", config["threads"])))
-    schema, periodes, noms, voc_commandes = preparer_annees(annees, config)
+    schema, periodes, noms, voc_commandes, copies = preparer_annees(annees, config)
     f_tout = np.concatenate([f for f, _ in periodes])
     y_tout = np.concatenate([y for _, y in periodes])
     stats = calculer_stats(f_tout, y_tout)
@@ -312,6 +351,8 @@ def entrainer(annees, dossier, **options):
             "entrees": [i for i, n in enumerate(gardees) if n.startswith("dmopcmd_")],
             "circuits": [schema["target_columns"].index(c) for c in config["branche_commandes"]],
         }
+    config["_etats"] = [i for i, n in enumerate(gardees) if n.startswith("dmopcmd_etat_")]
+    periodes = periodes + copies
     dossier = Path(dossier)
     dossier.mkdir(parents=True, exist_ok=True)
     n_circuits = len(schema["target_columns"])

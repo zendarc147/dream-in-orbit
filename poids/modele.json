@@ -5,6 +5,8 @@
     "annee2"
   ],
   "options": {
+    "masque_saaf": 0.1,
+    "abandon_etats": 0.5,
     "borne_niveau_prediction": 10.0,
     "graines": [
       0,

@@ -429,3 +429,64 @@ Après installation : 31 tests réussis (préparation synthétique, prédiction 
 commandes, diagnostics, bornes et compatibilité des poids historiques). Journal :
 `runs/robustesse_final/tests.log`. Audit final des empreintes des sources et poids,
 de la métrique, des exclusions Git et des deux comparaisons de graines réussi.
+
+## Régularisations de robustesse — 7 novembre 2026
+
+Objectif : rendre le modèle final moins fragile face à deux changements de distribution
+plausibles, sans correction ciblée ni donnée nouvelle. Le premier est une longue lacune
+de télémétrie SAAF. Le second est un changement de codage des états AOOO/ATTT.
+
+- **Masquage SAAF par blocs** (`masque_saaf`, `masquer_saaf` dans `monde.py`) : chaque
+  période d'entraînement est conservée, et une copie masquée lui est ajoutée. Dans cette
+  copie, des blocs contigus de 1 à 720 h (longueur log-uniforme, dernier bloc raccourci
+  pour obtenir la fraction exacte) couvrent 10 % des heures. Sur ces heures, les colonnes
+  `saaf_*` prennent les valeurs de remplissage du schéma, avec une couverture de 0 et un
+  indicateur manquant à 1, comme pour une vraie lacune. Le masque est fixe par période
+  (graine = numéro de période) et commun à toutes les graines. Les statistiques et la
+  sélection des variables sont calculées sur les périodes originales seulement.
+- **Abandon groupé des états** (`abandon_etats`, `abandonner_etats`) : à l'entraînement,
+  avec une probabilité de 0.5 par épisode, toutes les variables `dmopcmd_etat_*` sont
+  mises à 0 dans l'espace normalisé, sur tout l'épisode. Cela se fait après la
+  normalisation et avant le bruit. Les impulsions `dmopcmd_impulsion_*` restent intactes.
+  La branche vers NPWD2881 ne peut donc pas dépendre d'un code d'état exact. Les indices
+  concernés sont enregistrés dans `config["_etats"]`. L'abandon n'est jamais appliqué à
+  la prédiction.
+
+Les deux options valent 0 par défaut : les anciens poids se rechargent sans changement.
+Avec les deux options à 0, un petit entraînement donne des poids et des statistiques
+identiques au bit près à ceux du code précédent (commit 8fa1d0e).
+
+Protocole : `valider.py`, ensemble mixte complet (2 membres × 5 graines, 600 pas), deux
+directions, GPU T4 Kaggle. Environnement : PyTorch 2.15.0+cu132, Python 3.13.16. La
+référence est relancée dans cet environnement ; PyTorch y diffère de la session du
+5 novembre (2.11.0). Critères d'acceptation : aucune direction dégradée de plus de
+0.0005, moyenne au plus 0.08587, confirmation sur les graines 5 à 9 si l'écart est proche
+du seuil.
+
+| Graines | Configuration | Directe | Inverse | Moyenne | Entraînement des deux directions |
+|---|---|---:|---:|---:|---:|
+| 0–4 | Référence relancée | 0.082650 | 0.088082 | 0.085366 | 659 s |
+| 0–4 | `masque_saaf` 0.1 + `abandon_etats` 0.5 | 0.082553 | 0.088474 | 0.085513 | 665 s |
+| 5–9 | Référence relancée | 0.083092 | 0.088354 | 0.085723 | 654 s |
+| **5–9** | **`masque_saaf` 0.1 + `abandon_etats` 0.5 (retenu)** | **0.083361** | **0.088258** | **0.085810** | 663 s |
+
+La référence reproduit les valeurs attendues (0.08265 / 0.08808 / 0.08537). Avec la
+version de PyTorch différente, l'inverse s'écarte de 2.6e-5 de la session du 5 novembre.
+
+Écarts du candidat : sur les graines 0 à 4, −0.00010 en directe et +0.00039 en inverse.
+Sur les graines 5 à 9, +0.00027 en directe et −0.00010 en inverse. Sur la moyenne,
++0.00015 et +0.00009. Les deux groupes respectent les critères : candidat retenu. Le
+candidat n'améliore pas la validation standard : la direction dégradée change d'un
+groupe à l'autre, et les écarts restent dans le bruit de graine. Il est retenu pour la
+robustesse attendue, à un coût moyen d'environ 0.0001.
+
+Limites : le gain de robustesse n'est pas mesuré. Aucune validation ne contient de
+lacune SAAF longue artificielle ni d'états recodés. Les régimes de NPWD2551, 2451 et 2851
+restent inchangés : aucun signal causal n'a été validé dans les deux directions.
+
+Modèle final (`poids/`) : `python train.py --options '{"masque_saaf": 0.1,
+"abandon_etats": 0.5, "borne_niveau_prediction": 10.0, "graines": [0, 1, 2, 3, 4]}'`, sur
+annee1 + annee2, GPU T4 Kaggle : 629 s d'entraînement. Chaque membre compte 5 modèles et
+38 variables d'état concernées par l'abandon. Tests : 40 réussis (`python -m unittest
+discover -s tests`), dont `tests/test_robustesse.py` et la prédiction de bout en bout
+avec les nouveaux poids.
