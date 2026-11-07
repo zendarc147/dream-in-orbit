@@ -31,10 +31,10 @@ import pandas as pd
 import torch
 from torch import nn
 
-import commandes
-import dmop_etats
-import donnees
-import variables
+from . import commandes
+from . import dmop_etats
+from . import donnees
+from . import variables
 
 CONFIG_DEFAUT = {
     "variables": "v1",       # jeu de variables d'entrée (voir variables.py)

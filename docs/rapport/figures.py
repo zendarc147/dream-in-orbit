@@ -1,9 +1,9 @@
-"""Figures du rapport d'avancement (rapport/figures/*.pdf) et chiffres utilisés dans le texte.
+"""Figures du rapport d'avancement (docs/rapport/figures/*.pdf) et chiffres utilisés dans le texte.
 
-    python rapport/figures.py --preds DOSSIER
+    python docs/rapport/figures.py --preds DOSSIER
 
 DOSSIER contient boost_{directe,inverse}.csv, final_{directe,inverse}.csv et
-final_{directe,inverse}_ecart.csv, produits par baselines/boosting.py et mixte.py
+final_{directe,inverse}_ecart.csv, produits par baselines/boosting.py et dio/mixte.py
 (poids runs/c2_niveau_600/) sur validation/ et validation_inverse/.
 """
 import argparse
@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-RACINE = Path(__file__).resolve().parent.parent
-SORTIE = RACINE / "rapport" / "figures"
+RACINE = Path(__file__).resolve().parents[2]
+SORTIE = Path(__file__).resolve().parent / "figures"
 BLEU, ORANGE, VERT, GRIS, ENCRE, ENCRE2 = "#2a78d6", "#eb6834", "#1baf7a", "#9a9890", "#0b0b0b", "#52514e"
 DIRECTIONS = {"directe": ("annee1", "validation"), "inverse": ("annee2", "validation_inverse")}
 MOIS_H = 24 * 30

@@ -1,7 +1,7 @@
 """Préparer les contextes horaires X et les courants y, sans entraîner de modèle.
 
-    python prepare.py --data-dir data --out data/prepared
-    python prepare.py --test-dir validation/test --schema data/prepared/schema.json --out data/prepared/test
+    python -m dio.prepare --data-dir data --out data/prepared
+    python -m dio.prepare --test-dir validation/test --schema data/prepared/schema.json --out /tmp/prepared_test
 
 X utilise seulement les cinq contextes. Le schéma est appris sur annee1 puis
 réutilisé : aucun courant, même initial, ne devient une colonne de X.

@@ -3,9 +3,7 @@
 *.pem
 __pycache__/
 .venv/
-/data/raw/
 /data/annee1/power.csv
 /data/annee2/power.csv
 runs/
 validation_inverse/
-/data/annee1/power.csv

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-from monde import CONFIG_DEFAUT, MondeGRU, charger
+from dio.monde import CONFIG_DEFAUT, MondeGRU, charger
 
 
 class TestBorneNiveau(unittest.TestCase):

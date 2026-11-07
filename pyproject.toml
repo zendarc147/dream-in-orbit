@@ -1,7 +1,7 @@
 [project]
 name = "dream-in-orbit"
 version = "0.1.0"
-description = "Add your description here"
+description = "World model GRU de la consommation électrique d'un satellite (Mars Express)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

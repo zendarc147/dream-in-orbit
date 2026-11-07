@@ -1,17 +1,17 @@
 """Lancer une commande du projet sur un GPU T4 Kaggle et rapatrier ses résultats.
 
-    python lancer_kaggle.py -- valider.py --nom essai --modele gru_mixte
-    python lancer_kaggle.py --recuperer poids -- train.py
-    python lancer_kaggle.py --sans-attendre -- valider.py --nom essai   # rapatrier plus tard :
-    python lancer_kaggle.py --rapatrier
-    python lancer_kaggle.py --fente 2 -- valider.py --nom essai2   # 2e lancement simultané (2 au plus)
-    python lancer_kaggle.py -- valider.py --nom a ";" valider.py --nom b   # à la suite, une session
+    python outils/lancer_kaggle.py -- outils/valider.py --nom essai --modele gru_mixte
+    python outils/lancer_kaggle.py --recuperer poids -- train.py
+    python outils/lancer_kaggle.py --sans-attendre -- outils/valider.py --nom essai   # rapatrier plus tard :
+    python outils/lancer_kaggle.py --rapatrier
+    python outils/lancer_kaggle.py --fente 2 -- outils/valider.py --nom essai2   # 2e lancement simultané (2 au plus)
+    python outils/lancer_kaggle.py -- outils/valider.py --nom a ";" outils/valider.py --nom b   # à la suite, une session
 
 Le dépôt tel qu'il est sur le disque (fichiers suivis et non suivis, hors .gitignore) part
 sur Kaggle : les données (data/, validation/) dans le dataset privé
 UTILISATEUR/dream-in-orbit-code, envoyé une fois (--donnees pour le renvoyer ; Kaggle peut
 mettre quelques minutes à servir la nouvelle version), et le code dans le script du noyau
-lui-même, donc toujours à jour. kaggle/distant.py lance la ou les commandes, puis les
+lui-même, donc toujours à jour. outils/kaggle_distant.py lance la ou les commandes, puis les
 dossiers demandés (runs/ par défaut) reviennent ici, fusionnés dans le dépôt comme après
 un lancement local. Le journal Kaggle est gardé dans runs/_kaggle/.
 Prérequis : CLI kaggle (uv tool install kaggle --with six) et ~/.kaggle/access_token.
@@ -28,11 +28,11 @@ import tempfile
 import time
 from pathlib import Path
 
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
 UTILISATEUR = "zendarc147"
 DATASET = f"{UTILISATEUR}/dream-in-orbit-code"
 NOYAU = f"{UTILISATEUR}/dream-in-orbit"
-INUTILES = ("output/", "rapport/", "demo/")
+INUTILES = ("docs/",)
 DONNEES = ("data/", "validation/")
 
 
@@ -104,7 +104,7 @@ def pousser_noyau(dossier, commande):
         info.size = len(contenu)
         tar.addfile(info, io.BytesIO(contenu))
     print(f"Code empaqueté : {paquet.tell() / 1e3:.0f} ko", flush=True)
-    script = (RACINE / "kaggle" / "distant.py").read_text()
+    script = (RACINE / "outils" / "kaggle_distant.py").read_text()
     (dossier / "distant.py").write_text(f'CODE = "{base64.b64encode(paquet.getvalue()).decode()}"\n' + script)
     (dossier / "kernel-metadata.json").write_text(json.dumps({
         "id": NOYAU, "title": NOYAU.split("/")[1], "code_file": "distant.py", "language": "python",
@@ -123,10 +123,8 @@ def rapatrier():
     dossier = RACINE / "runs" / "_kaggle" / (time.strftime("%Y%m%d_%H%M%S") + NOYAU.removeprefix(f"{UTILISATEUR}/dream-in-orbit"))
     kaggle("kernels", "output", NOYAU, "-p", str(dossier), "-o", "-q")
     for sous in dossier.iterdir():
-        if sous.is_dir():
+        if sous.is_dir():  # runs/, poids/, ou docs/ pour un fichier comme docs/ABLATIONS.md
             shutil.copytree(sous, RACINE / sous.name, dirs_exist_ok=True)
-        elif sous.suffix == ".md":  # fichier demandé avec --recuperer (ex. ABLATIONS.md)
-            shutil.copy(sous, RACINE / sous.name)
     journaux = list(dossier.glob("*.log"))
     print(f"Statut Kaggle : {sortie}\nSorties : {dossier}")
     if statut != "complete":
@@ -138,7 +136,7 @@ def rapatrier():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--recuperer", nargs="+", default=["runs"], help="dossiers (ou fichiers .md) rapatriés (défaut : runs)")
+    ap.add_argument("--recuperer", nargs="+", default=["runs"], help="dossiers ou fichiers rapatriés (défaut : runs)")
     ap.add_argument("--sans-attendre", action="store_true", help="lancer sans attendre la fin")
     ap.add_argument("--rapatrier", action="store_true", help="attendre le dernier lancement et rapatrier")
     ap.add_argument("--donnees", action="store_true", help="renvoyer data/ et validation/ (après un changement)")
@@ -148,7 +146,7 @@ def main():
     fente(a.fente)
     if not a.rapatrier:
         if not a.args:
-            ap.error("commande manquante, ex. : -- valider.py --nom essai")
+            ap.error("commande manquante, ex. : -- outils/valider.py --nom essai")
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "dataset").mkdir()
             (Path(tmp) / "noyau").mkdir()

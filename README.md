@@ -3,8 +3,8 @@
 Un réseau de neurones récurrent apprend comment le satellite réagit à son planning
 (commandes dmop, dont les commandes AOOO et ATTT, modes de pointage ftl) et à son contexte (Soleil saaf, événements evtf,
 tendances ltdata), puis simule seul ses 33 circuits heure par heure sur toute une période,
-à partir de ses 7 premiers jours réels (`power_init.csv`). Sujet : `sujet.md`.
-Scores et historique des essais : `RESULTATS.md`. Ablations : `ABLATIONS.md`.
+à partir de ses 7 premiers jours réels (`power_init.csv`). Sujet : [`docs/sujet.md`](docs/sujet.md).
+Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Ablations : [`docs/ABLATIONS.md`](docs/ABLATIONS.md).
 
 ## Résultats (RMSE, `evaluate.py`)
 
@@ -22,9 +22,9 @@ La borne reste à 5 pendant l'entraînement. À la prédiction, elle passe à 10
 l'écart-type appris du circuit atteint 0.01 ; les circuits presque constants
 gardent 5. Gain confirmé sur les graines 5–9, sans changement de la validation
 directe. Les départs décalés améliorent la moyenne et le pire cas, mais deux
-fenêtres inverses se dégradent légèrement : détail dans `RESULTATS.md`.
+fenêtres inverses se dégradent légèrement : détail dans `docs/RESULTATS.md`.
 
-Démo : `demo/reve_contre_realite.png` (rêve contre réalité sur annee2, bande ± 2σ de
+Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
 
 ## Installation
@@ -62,7 +62,7 @@ python train.py
 ```
 
 Entraîne l'ensemble final sur annee1 + annee2 et écrit `poids/`. Les données horaires
-sont lues dans `data/prepared/` ; si elles manquent, `prepare.py` les recrée à partir
+sont lues dans `data/prepared/` ; si elles manquent, `dio/prepare.py` les recrée à partir
 de `data/annee*/` (qui doit alors contenir `power.csv`). Les deux années se suivent
 sans trou : elles forment une seule période, et les épisodes d'entraînement peuvent
 traverser la frontière annee1/annee2.
@@ -78,32 +78,30 @@ python train.py
 
 ### Sur Kaggle depuis le terminal
 
-`lancer_kaggle.py` envoie le dépôt tel qu'il est sur le disque, lance la
+`outils/lancer_kaggle.py` envoie le dépôt tel qu'il est sur le disque, lance la
 commande sur un GPU T4 Kaggle et rapatrie `runs/` dans le dépôt, comme un lancement local.
 Prérequis : `uv tool install kaggle --with six` et un token API Kaggle dans
 `~/.kaggle/access_token` (kaggle.com > Settings > API).
 
 ```bash
-python lancer_kaggle.py -- valider.py --nom essai --modele gru_mixte
-python lancer_kaggle.py --recuperer poids -- train.py
-python lancer_kaggle.py --sans-attendre -- valider.py --nom essai   # puis : --rapatrier
-python lancer_kaggle.py --fente 2 -- valider.py --nom a ";" valider.py --nom b   # 2e session, 2 essais à la suite
+python outils/lancer_kaggle.py -- outils/valider.py --nom essai --modele gru_mixte
+python outils/lancer_kaggle.py --recuperer poids -- train.py
+python outils/lancer_kaggle.py --sans-attendre -- outils/valider.py --nom essai   # puis : --rapatrier
+python outils/lancer_kaggle.py --fente 2 -- outils/valider.py --nom a ";" outils/valider.py --nom b   # 2e session, 2 essais à la suite
 ```
 
 Le code part dans le script du noyau (quelques centaines de ko) ; le dataset privé ne porte
 que `data/` et `validation/`, envoyés une fois (`--donnees` pour les renvoyer). Kaggle
 accepte deux sessions GPU à la fois (`--fente`).
 
-`kaggle.ipynb` fait la même chose depuis l'interface web (clone GitHub, secret `GITHUB_TOKEN`).
-
 ## Valider
 
 Deux directions, toujours via `train.py` → `predict.py` → `evaluate.py` :
 
 ```bash
-python reconstruire_power.py      # recrée data/annee*/power.csv depuis data/prepared si absent
+python outils/reconstruire_power.py   # recrée data/annee*/power.csv depuis data/prepared si absent
 python make_validation.py --annee data/annee1 --out validation_inverse
-python valider.py --nom essai --modele gru
+python outils/valider.py --nom essai --modele gru
 ```
 
 - directe : entraînement sur annee1, test sur `validation/` (annee2) ;
@@ -113,27 +111,39 @@ python valider.py --nom essai --modele gru
 ## Ablations et démo
 
 ```bash
-python ablations.py               # sans éclipses, sans saaf, sans dmop, sans mémoire
-python demo.py --poids runs/NOM/directe --out demo/reve_contre_realite.png
+python outils/ablations.py        # sans éclipses, sans saaf, sans dmop, sans mémoire
+python outils/demo.py --poids runs/NOM/directe --out docs/demo/reve_contre_realite.png
 ```
 
 ## Tests
 
 ```bash
-python -m unittest test_prepare baselines.test_ridge test_predict test_commandes test_niveau test_diagnostic_temporel
+python -m unittest discover -s tests
 ```
 
 ## Organisation
 
-| Fichier | Rôle |
-|---|---|
-| `prepare.py` | contextes bruts → 65 variables horaires (schéma appris sur annee1) |
-| `variables.py` | variables v2 : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin |
-| `monde.py` | world model GRU (encodeur sur power_init → h0, simulateur 2 couches, tête 33 circuits, correction de niveau de power_init qui s'estompe avec une demi-vie apprise, branche des commandes AOOO/ATTT vers NPWD2881) |
-| `mixte.py` | modèle final : moyenne de deux ensembles de world models (variables v1 et v2r) |
-| `commandes.py` | commandes AOOO et ATTT : impulsions et états décalés (délai appris sur NPWD2881), regroupement des commandes nouvelles, ATMB, masque (options) |
-| `dmop_etats.py` | état « dernière commande » des sous-systèmes dmop (testé, non retenu) |
-| `donnees.py` | chargement des années préparées et des dossiers de test |
-| `train.py`, `predict.py` | entraînement et prédiction (modèle choisi dans `modeles.py`) |
-| `valider.py`, `ablations.py`, `demo.py` | validation, ablations, figure rêve contre réalité |
-| `baselines/` | constante, Ridge, gradient boosting (+ recalage sur power_init) |
+```
+train.py, predict.py             entraînement et prédiction (interface d'évaluation)
+evaluate.py, make_validation.py  scripts du kit, inchangés
+dio/                             le modèle
+  prepare.py                     contextes bruts -> 65 variables horaires (schéma appris sur annee1)
+  variables.py                   variables v2 : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin
+  commandes.py                   commandes AOOO et ATTT : impulsions et états décalés (délai appris sur NPWD2881)
+  dmop_etats.py                  état « dernière commande » des sous-systèmes dmop (testé, non retenu)
+  donnees.py                     chargement des années préparées et des dossiers de test
+  monde.py                       world model GRU (encodeur sur power_init, simulateur 2 couches, tête 33 circuits,
+                                 correction de niveau, branche des commandes AOOO/ATTT vers NPWD2881)
+  mixte.py                       modèle final : moyenne de deux ensembles de world models (variables v1 et v2r)
+  modeles.py                     registre des modèles utilisables par train.py et predict.py
+baselines/                       constante, Ridge, gradient boosting (+ recalage sur power_init)
+outils/                          validation, ablations, démo, diagnostics, lancement sur Kaggle
+tests/                           tests unitaires
+poids/                           poids du modèle final
+data/                            kit (annee1, annee2) et données horaires préparées
+validation/                      dossier de test de la validation directe (annee2)
+docs/                            sujet, journal des résultats, ablations, rapport, exploration, démo
+```
+
+Les options du world model testées puis écartées (`statique`, `conv`, `etats_dmop`…) restent
+dans `dio/monde.py` : elles permettent de rejouer chaque ligne de `docs/RESULTATS.md`.

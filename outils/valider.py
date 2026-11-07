@@ -1,7 +1,7 @@
 """Valider un modèle dans les deux directions, toujours via train.py, predict.py et evaluate.py.
 
-    python valider.py --nom e1_boosting --modele boosting
-    python valider.py --nom e1_boosting --sans-entrainement --options-prediction '{"recalage": 1.0}'
+    python outils/valider.py --nom e1_boosting --modele boosting
+    python outils/valider.py --nom e1_boosting --sans-entrainement --options-prediction '{"recalage": 1.0}'
 
 Directe : entraînement sur annee1, test sur validation/ (annee2).
 Inverse : entraînement sur annee2, test sur validation_inverse/ (annee1),
@@ -17,7 +17,8 @@ import sys
 import time
 from pathlib import Path
 
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RACINE))
 DIRECTIONS = {
     "directe": ("annee1", RACINE / "validation"),
     "inverse": ("annee2", RACINE / "validation_inverse"),
@@ -91,7 +92,7 @@ def main():
     ap.add_argument("--sans-entrainement", action="store_true")
     ap.add_argument("--direction", choices=sorted(DIRECTIONS), nargs="+", default=list(DIRECTIONS))
     args = ap.parse_args()
-    import modeles
+    from dio import modeles
     valider(args.nom, args.modele or modeles.FINAL, json.loads(args.options),
             json.loads(args.options_prediction), not args.sans_entrainement, args.direction)
 

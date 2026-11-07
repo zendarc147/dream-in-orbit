@@ -4,14 +4,12 @@ Recalage optionnel : on ajoute à chaque circuit une fraction de l'écart moyen
 observé entre la vérité et la prédiction sur les 7 jours de power_init.
 """
 import pickle
-import sys
 from pathlib import Path
 
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import donnees  # noqa: E402
+from dio import donnees
 
 
 def entrainer(annees, dossier, graine=0, max_iter=100, learning_rate=0.05, max_leaf_nodes=7,

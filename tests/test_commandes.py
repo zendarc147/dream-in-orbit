@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-import commandes
+from dio import commandes
 
 H = commandes.H
 

@@ -8,7 +8,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-import diagnostic_temporel as diagnostic
+from outils import diagnostic_temporel as diagnostic
 
 
 class TestDiagnosticTemporel(unittest.TestCase):

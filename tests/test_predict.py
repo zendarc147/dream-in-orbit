@@ -10,10 +10,10 @@ import numpy as np
 import pandas as pd
 import torch
 
-import monde
-import variables
+from dio import monde
+from dio import variables
 
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
 VALIDATION = RACINE / "validation"
 
 

@@ -12,8 +12,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-import donnees
-import monde
+from . import donnees
+from . import monde
 
 MEMBRES_DEFAUT = [{"variables": "v1", "bruit": 0.3}, {"variables": "v2r", "bruit": 0.0}]
 

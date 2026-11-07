@@ -7,14 +7,16 @@ ni choix de variables sur la période évaluée.
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
 
-import donnees
-import monde
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from dio import donnees  # noqa: E402
+from dio import monde  # noqa: E402
 
 
 def mesures(verite, prediction):

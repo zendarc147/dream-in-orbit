@@ -1,6 +1,6 @@
 """Reconstruire un power.csv horaire à partir des cibles déjà préparées.
 
-    python reconstruire_power.py
+    python outils/reconstruire_power.py
 
 Les power.csv bruts (environ 600 Mo chacun) ne sont pas versionnés. Quand ils
 manquent, on écrit data/anneeX/power.csv à partir de data/prepared/anneeX/y.csv :
@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 H = 3_600_000
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
 
 
 def reconstruire(annee):

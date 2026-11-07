@@ -3,8 +3,8 @@ import importlib
 
 MODELES = {
     "boosting": "baselines.boosting",
-    "gru": "monde",
-    "gru_mixte": "mixte",
+    "gru": "dio.monde",
+    "gru_mixte": "dio.mixte",
 }
 FINAL = "gru_mixte"
 

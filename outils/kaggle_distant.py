@@ -1,4 +1,4 @@
-"""Exécuté sur Kaggle par lancer_kaggle.py, ne pas lancer à la main.
+"""Exécuté sur Kaggle par outils/lancer_kaggle.py, ne pas lancer à la main.
 
 Retrouve les données (dataset attaché), y dépose le code embarqué (CODE, ajouté en tête de
 ce fichier par lancer_kaggle.py), installe les dépendances, recrée
@@ -44,7 +44,7 @@ def main():
     lancer(sys.executable, "-m", "pip", "install", "-q", *exigences)
     lancer(sys.executable, "-c", "import sys, torch; print(sys.version, 'torch', torch.__version__,"
            " 'cuda', torch.cuda.is_available() and torch.cuda.get_device_name(0))")
-    lancer(sys.executable, "reconstruire_power.py")
+    lancer(sys.executable, "outils/reconstruire_power.py")
     lancer(sys.executable, "make_validation.py", "--annee", "data/annee1", "--out", "validation_inverse")
     try:
         for args in commande.get("commandes", [commande.get("args")]):
@@ -56,6 +56,7 @@ def main():
             if (DEPOT / dossier).is_dir():
                 shutil.copytree(DEPOT / dossier, SORTIE / dossier, dirs_exist_ok=True)
             elif (DEPOT / dossier).is_file():
+                (SORTIE / dossier).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(DEPOT / dossier, SORTIE / dossier)
 
 

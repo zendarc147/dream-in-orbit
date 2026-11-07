@@ -10,7 +10,7 @@ import json
 import time
 from pathlib import Path
 
-import modeles
+from dio import modeles
 
 RACINE = Path(__file__).resolve().parent
 

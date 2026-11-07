@@ -1,10 +1,10 @@
 """Ablations du world model : que valent les éclipses, le Soleil, les commandes, la mémoire ?
 
-    python ablations.py                         # direction directe, configuration de poids/modele.json
-    python ablations.py --direction directe inverse --graines 0 1
+    python outils/ablations.py                         # direction directe, configuration de poids/modele.json
+    python outils/ablations.py --direction directe inverse --graines 0 1
 
 Chaque variante est entraînée puis notée via train.py -> predict.py -> evaluate.py
-(voir valider.py). Le tableau est écrit dans ABLATIONS.md.
+(voir valider.py). Le tableau est écrit dans docs/ABLATIONS.md.
 """
 import argparse
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from valider import valider
 
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
 VARIANTES = {
     "complet": {},
     "sans éclipses": {"sans": ["eclipses"]},
@@ -50,7 +50,8 @@ def main():
         ecart = sum(scores[d]["rmse"] - reference[d]["rmse"] for d in args.direction) / len(args.direction)
         texte.append(f"| {nom} | " + " | ".join(f"{scores[d]['rmse']:.4f}" for d in args.direction)
                      + f" | {ecart:+.4f} |")
-    (RACINE / "ABLATIONS.md").write_text("\n".join(texte) + "\n")
+    (RACINE / "docs").mkdir(exist_ok=True)
+    (RACINE / "docs/ABLATIONS.md").write_text("\n".join(texte) + "\n")
     print("\n".join(texte))
 
 

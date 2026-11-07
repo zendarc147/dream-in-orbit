@@ -10,11 +10,11 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-import prepare as p
+from dio import prepare as p
 from make_validation import construire
 
 
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
 
 
 def petits_contextes():
@@ -201,7 +201,7 @@ class PreparationTest(unittest.TestCase):
 class DonneesLocalesTest(unittest.TestCase):
     def test_deux_periodes_reference_officielle_et_format_test(self):
         proteges = list((RACINE / "data").glob("annee*/*.csv"))
-        proteges += [RACINE / nom for nom in ("sujet.md", "exploration.ipynb", "make_validation.py",
+        proteges += [RACINE / nom for nom in ("docs/sujet.md", "docs/exploration/exploration.ipynb", "make_validation.py",
                                              "evaluate.py", "requirements.txt", ".gitignore", "data/manifest.json")]
 
         def empreintes():

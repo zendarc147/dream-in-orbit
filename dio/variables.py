@@ -13,8 +13,8 @@ Les groupes peuvent être retirés pour les ablations : eclipses, saaf, dmop, ft
 import numpy as np
 import pandas as pd
 
-import commandes
-import dmop_etats
+from . import commandes
+from . import dmop_etats
 
 FENETRES = (3, 6, 12, 24)  # la fenêtre de 1 h est la valeur horaire elle-même (déjà dans v1)
 PLAFOND_H = 72             # au-delà, « depuis/jusqu'à » est plafonné

@@ -1,6 +1,6 @@
 """Démo « rêve contre réalité » sur la validation directe, avec la bande d'incertitude.
 
-    python demo.py --poids runs/NOM/directe --out demo/reve_contre_realite.png
+    python outils/demo.py --poids runs/NOM/directe --out docs/demo/reve_contre_realite.png
 
 Le modèle doit avoir été entraîné sans la période affichée (validation directe :
 entraînement sur annee1 seul, affichage d'annee2). La bande = ± 2 écarts-types de
@@ -8,6 +8,7 @@ l'ensemble (tous les modèles de tous les membres). Produit aussi la courbe de d
 """
 import argparse
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -17,9 +18,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-import modeles  # noqa: E402
-
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RACINE))
+from dio import modeles  # noqa: E402
 CIRCUITS = ["NPWD2551", "NPWD2451", "NPWD2532", "NPWD2851"]
 
 
@@ -27,7 +28,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--poids", type=Path, required=True)
     ap.add_argument("--validation", type=Path, default=RACINE / "validation")
-    ap.add_argument("--out", type=Path, default=RACINE / "demo/reve_contre_realite.png")
+    ap.add_argument("--out", type=Path, default=RACINE / "docs/demo/reve_contre_realite.png")
     args = ap.parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporaire:

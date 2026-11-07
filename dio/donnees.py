@@ -9,10 +9,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import prepare
+from . import prepare
 
 H = 3_600_000
-RACINE = Path(__file__).resolve().parent
+RACINE = Path(__file__).resolve().parent.parent
 PREPARE = RACINE / "data" / "prepared"
 
 
