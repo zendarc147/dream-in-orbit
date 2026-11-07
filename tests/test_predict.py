@@ -1,4 +1,4 @@
-"""Tests du world model : variables v2 et bout en bout de predict.py avec les poids commités."""
+"""Tests du world model : variables v2r et bout en bout de predict.py avec les poids commités."""
 import re
 import subprocess
 import sys
@@ -30,26 +30,28 @@ class VariablesTest(unittest.TestCase):
 
     def test_ablation_retire_tout_le_groupe(self):
         x = pd.read_csv(RACINE / "data/prepared/annee1/X.csv", index_col="ut_ms", nrows=300)
-        _, noms = variables.construire(x, "v2", ["eclipses"])
+        _, noms = variables.construire(x, "v2r", ["eclipses"])
         self.assertFalse([n for n in noms if "UMBRA" in n or "OCC_MARS" in n or "eclipse" in n])
-        _, tous = variables.construire(x, "v2")
+        _, tous = variables.construire(x, "v2r")
         self.assertGreater(len(tous), len(noms))
 
 
 class MondeTest(unittest.TestCase):
     def test_simulation_par_morceaux_identique_a_la_simulation_complete(self):
-        """Entraînement (morceaux + marges du regard + heure de début de la correction de
-        niveau) et prédiction (une seule passe) doivent voir exactement le même calcul."""
+        """Entraînement (morceaux + heure de début de la correction de niveau) et prédiction
+        (une seule passe) doivent voir exactement le même calcul."""
         torch.manual_seed(0)
-        modele = monde.MondeGRU(5, 3, 8, 2, 0.0, conv=4, niveau=True).eval()
+        modele = monde.MondeGRU(5, 3, 8, 2, 0.0, (torch.zeros(3), torch.ones(3)),
+                                branche={"entrees": [4], "circuits": [1]}).eval()
         with torch.no_grad():
             modele.poids_niveau.fill_(0.5)
+            modele.poids_lent.fill_(0.3)
+            modele.reseau_commandes[-1].weight.fill_(0.2)
         x, y_init, ti, morceau = torch.randn(1, 130, 5), torch.randn(1, 24, 6), 24, 40
-        complet = modele(x[:, :ti], y_init, monde.etendre(x, modele.marge)[:, ti:])
-        long = monde.etendre(x, modele.marge)
-        h, resume, sorties = modele.etat_initial(x[:, :ti], y_init), modele.resume_init(y_init), []
+        complet = modele(x[:, :ti], y_init, x[:, ti:])
+        h, resume, sorties = modele.etat_initial(x[:, :ti], y_init), modele.resume_niveau(x[:, :ti], y_init), []
         for a in range(0, 130 - ti, morceau):
-            sortie, h = modele.simuler(long[:, ti + a:ti + a + morceau + 2 * modele.marge], h, resume, a)
+            sortie, h = modele.simuler(x[:, ti + a:ti + a + morceau], h, resume, a)
             sorties.append(sortie)
         torch.testing.assert_close(torch.cat(sorties, dim=1), complet)
 

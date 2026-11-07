@@ -128,9 +128,8 @@ train.py, predict.py             entraînement et prédiction (interface d'éval
 evaluate.py, make_validation.py  scripts du kit, inchangés
 dio/                             le modèle
   prepare.py                     contextes bruts -> 65 variables horaires (schéma appris sur annee1)
-  variables.py                   variables v2 : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin
+  variables.py                   variables v2r : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin
   commandes.py                   commandes AOOO et ATTT : impulsions et états décalés (délai appris sur NPWD2881)
-  dmop_etats.py                  état « dernière commande » des sous-systèmes dmop (testé, non retenu)
   donnees.py                     chargement des années préparées et des dossiers de test
   monde.py                       world model GRU (encodeur sur power_init, simulateur 2 couches, tête 33 circuits,
                                  correction de niveau, branche des commandes AOOO/ATTT vers NPWD2881)
@@ -145,5 +144,5 @@ validation/                      dossier de test de la validation directe (annee
 docs/                            sujet, journal des résultats, ablations, rapport, exploration, démo
 ```
 
-Les options du world model testées puis écartées (`statique`, `conv`, `etats_dmop`…) restent
-dans `dio/monde.py` : elles permettent de rejouer chaque ligne de `docs/RESULTATS.md`.
+Le code ne garde que ce que sert le modèle final et les ablations. Les variantes testées puis
+écartées (décrites dans `docs/RESULTATS.md`) restent dans l'historique git.

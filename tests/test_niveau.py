@@ -12,10 +12,8 @@ class TestBorneNiveau(unittest.TestCase):
     def test_borne_prediction_utilise_uniquement_la_variance_apprise(self):
         stats = {"garder": torch.ones(2, dtype=torch.bool), "y_moyenne": torch.zeros(2),
                  "y_ecart": torch.tensor([.1, 1e-6])}
-        m = MondeGRU(2, 2, 4, 1, 0, niveau=True,
-                     y_stats=(stats["y_moyenne"], stats["y_ecart"]))
-        config = {**CONFIG_DEFAUT, "taille": 4, "couches": 1, "dropout": 0.,
-                  "niveau_lent": False, "borne_niveau_prediction": 10.}
+        m = MondeGRU(2, 2, 4, 1, 0, (stats["y_moyenne"], stats["y_ecart"]))
+        config = {**CONFIG_DEFAUT, "taille": 4, "couches": 1, "dropout": 0., "borne_niveau_prediction": 10.}
         paquet = {"config": config, "stats": stats, "circuits": ["a", "b"],
                   "etats": [m.state_dict()]}
         with tempfile.TemporaryDirectory() as temp:
