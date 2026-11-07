@@ -1,0 +1,22 @@
+{
+  "modele": "gru_mixte",
+  "annees": [
+    "annee1",
+    "annee2"
+  ],
+  "options": {
+    "masque_saaf": 0.1,
+    "abandon_etats": 0.5,
+    "borne_niveau_prediction": 10.0,
+    "graines": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "regime_partage": true,
+    "lambda_regime": 0.05,
+    "abandon_regime_contexte": 0.1
+  }
+}
