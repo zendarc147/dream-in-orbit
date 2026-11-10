@@ -600,3 +600,104 @@ classiques comme composants seulement, et le composant pèse 85 Mo par modèle. 
 `python outils/valider.py --nom gbm_B_V2 --modele gbm_sacs --options '{"config": "B",
 "jeu": "V2"}'` puis `python outils/melanger.py --gru runs/rob_cand_g04 runs/rob_cand_g59
 --autre runs/gbm_B_V2 --nom hybride_t1`.
+
+## Généralisation d'une année à l'autre — 10 novembre 2026
+
+Objectif : comprendre d'où vient l'erreur d'une année à l'autre, tester seulement des causes
+identifiées, et ne garder une modification que si elle améliore les deux directions, reste
+stable entre groupes de graines et ne doit pas son gain à quelques heures ou à un seul circuit.
+Référence : le GRU de validation actuel (`runs/rob_cand_g04`, `runs/rob_cand_g59`), relancé à
+l'identique au bit près sur Kaggle (`runs/gen_ref_g04`). Toutes les RMSE sortent d'`evaluate.py`,
+sur les mêmes cellules (530 409 en directe, 537 471 en inverse).
+Outil : `outils/generalisation.py` (décomposition, comparaison avec les critères, facteur hors bloc).
+
+### Diagnostic
+
+Bandes de l'erreur (part de la MSE) : biais constant, lent (> 30 jours), moyen (1 à 30 jours),
+rapide (< 1 jour). Directe : 5 / 16 / 12 / 65 %. Inverse : 5 / 25 / 8 / 59 %. L'erreur ne monte
+pas avec l'horizon (le simulateur ne réinjecte jamais ses sorties) : les pics viennent de
+régimes mensuels mal prédits.
+
+- NPWD2551 et NPWD2451 : 55 % de la MSE directe, 39 % de l'inverse, surtout en bande rapide
+  (bascules de thermostat).
+- NPWD2531, inverse : 17 % de la MSE ; les jours 30 à 150 pèsent à eux seuls 13 % de la MSE
+  inverse. Le niveau initial (0.57) tient 5 mois ; la prédiction retombe de 0.33 à 0.07. En
+  directe, faux régime allumé entre les jours 180 et 330.
+- NPWD2851 : biais −0.065 en directe, +0.080 en inverse. NPWD2532, inverse : 1.0 observé,
+  1.25 prédit entre les jours 240 et 420.
+- Hors bloc dans la même année (`gru_hors_sac`), l'erreur vaut 0.0976 sur annee1 et 0.0838 sur
+  annee2, contre 0.0884 et 0.0811 pour le modèle de l'autre année sur les mêmes heures : le
+  passage d'une année à l'autre n'est pas la cause principale. Le boosting donne le même constat.
+- Le boosting V2 bat le GRU sur 2532, 2561 et la bande rapide de 2551/2451 ; le boosting V1
+  non. Attribution (boosting A, 5 sacs, 75 s par variante en local) : V1 0.0908 / 0.0976 ;
+  + physique 0.0877 / 0.0928 ; + familles de commandes 0.0903 / 0.0963 ; V2 0.0866 / 0.0917.
+  La physique porte 2451, 2532, 2561, 2851 ; les familles portent 2551 et 2881.
+- Sur l'année d'entraînement seule, un écart de niveau de 7 jours garde 50 à 85 % de sa valeur
+  le premier mois et environ 0 après 60 à 90 jours. La correction apprise du GRU n'en garde
+  que 16 à 59 % ; ses poids et demi-vies restent près de leur initialisation.
+
+Hypothèses : H1a, variables physiques absentes du GRU ; H1b, familles de commandes absentes ;
+H2, correction de niveau trop faible le premier mois ; H3, changement de distribution entre
+années (réfutée par la comparaison hors bloc, aucun essai).
+
+### Essais
+
+| Graines | Essai | Directe | Inverse | Entraînement (2 directions, T4) |
+|---|---|---:|---:|---:|
+| 0–4 | Référence | 0.082553 | 0.088474 | 659 s |
+| 5–9 | Référence | 0.083361 | 0.088258 | – |
+| 0–4 | H1a : `physique` | 0.085326 | 0.087586 | 768 s |
+| 5–9 | H1a : `physique` | 0.085168 | 0.087170 | 770 s |
+| 0–4 | H2 : `facteur_niveau_prediction` 1.5 (poids de référence) | 0.082465 | 0.086709 | 0 s |
+| 5–9 | H2 : `facteur_niveau_prediction` 1.5 (poids de référence) | 0.083262 | 0.086557 | 0 s |
+| 0–4 | H1b : `familles` | 0.079120 | 0.085478 | 1049 s |
+| 5–9 | H1b : `familles` | 0.078775 | 0.086027 | 1047 s |
+| **0–4** | **H1b + H2 (facteur 1.5), retenu** | **0.079062** | **0.083603** | 1054 s |
+| **5–9** | **H1b + H2 (facteur 1.5), retenu** | **0.078719** | **0.084251** | 1054 s |
+
+Prédiction : environ 30 s par direction pour tous les essais (CPU Kaggle), 22 s en local pour
+le candidat final.
+
+- **H1a, rejetée.** Le gain attendu sur 2532 en inverse apparaît (−0.011 / −0.013), mais en
+  directe le GRU apprend sur annee1 de faux régimes de 2531 (+0.031 / +0.024) et 2851. Les gains
+  attendus sur 2451 et 2561 ne se reproduisent pas.
+- **H1b, retenue.** Comptes horaires par famille de commande dmop (code sans lettre de variante,
+  vu au moins 20 fois à l'entraînement : 112 familles sur annee1, 144 sur annee2, 148 pour le
+  modèle final), en entrée du GRU. Gain sur plusieurs circuits : 2561 (−0.029 en directe,
+  −0.036 en inverse), 2531, 2551, 2881. Pertes : 2532 (+0.004 / +0.010) et 2451 en inverse.
+  Contrairement à G1 (commandes AOOO exactes en entrée du GRU), les familles améliorent les deux
+  directions. Coût : entraînement +60 %.
+- **H2, retenue.** Les poids de correction de niveau (terme rapide et terme lent) sont multipliés
+  à la prédiction. Le facteur est estimé hors bloc sur l'année d'entraînement seule
+  (`outils/generalisation.py facteur`, modèles de `gru_hors_sac`, départs tous les 60 jours) :
+  k* = 1.5 sur annee1, 2 sur annee2 ; k = 1.5 bat k = 1 sur les deux années et minimise la
+  moyenne des deux MSE. Explication : la correction est apprise en échantillon, où le GRU
+  reproduit déjà son année ; hors échantillon, l'écart initial est plus grand et persiste plus.
+  Gain ajouté à H1b : directe −0.00006 / −0.00006, inverse −0.0019 / −0.0018. Les deux tiers
+  viennent de 2531, le reste surtout de 2851 ; sans 2531, le gain inverse reste −0.0006. Avec
+  la règle par direction (k = 2 en inverse, valeur d'annee2), l'inverse passe à 0.082521 / 0.083348.
+  Option sans effet sur l'entraînement (états identiques au bit près, vérifié).
+
+### Candidat retenu et critères
+
+H1b + H2 contre la référence : directe −0.0035 / −0.0046, inverse −0.0049 / −0.0040. Pour chaque
+groupe de graines et chaque direction : la RMSE baisse encore sans le circuit qui gagne le plus
+et sans le 1 % d'heures qui gagnent le plus ; les deux moitiés baissent ; 18 à 21 blocs de
+30 jours sur 23 gagnent (pire perte d'un bloc : +0.0077). Moyenne des deux directions : 0.08133
+(graines 0–4) et 0.08149 (graines 5–9), contre 0.08551 et 0.08581.
+
+Limites. La perte sur 2532 (et 2451 en inverse) est réelle. Le facteur 1.5 vient des modèles hors
+bloc de la référence, pas de modèles hors bloc avec familles : non réestimé, pour ne pas payer
+6 ensembles de plus. Les familles comptent toutes les commandes vues, y compris celles d'une
+seule période : un vocabulaire très différent réduirait le gain. Le mélange
+avec le boosting (section précédente) n'a pas été remesuré sur ce candidat.
+
+Modèle final (`poids/`, installé le 10 novembre) : `familles`, `facteur_niveau_prediction` = 1.5,
+`masque_saaf` = 0.1 et `abandon_etats` = 0.5 deviennent les valeurs par défaut de `monde.py`, donc
+`python train.py` reproduit exactement la configuration installée (vérifié membre par membre).
+Entraîné sur annee1 + annee2 en 937 s sur T4 Kaggle ; poids 8.2 Mo (au lieu de 6.9). Prédiction :
+33 colonnes, 16 319 heures exactes, valeurs finies, 22 s sur CPU local. Anciens poids : commit
+8cde2d4. Le groupe `dmop` des ablations retire aussi les familles. La démo et les ablations n'ont
+pas été régénérées avec ce modèle.
+
+Coût de la session : environ 2 h de GPU T4 (référence, 6 essais, modèle final), 2 × 4 min de CPU local pour le facteur hors bloc, 2 × 75 s pour l'attribution du boosting.

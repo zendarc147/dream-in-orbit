@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from outils import diagnostic_temporel as diagnostic
+from outils import generalisation
 
 
 class TestDiagnosticTemporel(unittest.TestCase):
@@ -19,6 +20,21 @@ class TestDiagnosticTemporel(unittest.TestCase):
         self.assertEqual(resultat["n"], 5)
         self.assertAlmostEqual(resultat["rmse"] ** 2, 2 / 5)
         self.assertAlmostEqual(diagnostic.circuits(y, p).contribution_mse.sum(), 2 / 5)
+
+    def test_bandes_separent_niveau_et_evenements(self):
+        """Erreur constante : tout dans le biais ; alternance horaire : tout dans la bande rapide."""
+        n = 3000
+        constante = pd.DataFrame({"a": np.full(n, .2)})
+        biais, lent, moyen, rapide = generalisation.bandes(constante)
+        self.assertAlmostEqual(biais["a"], .2)
+        for bande in (lent, moyen, rapide):
+            np.testing.assert_allclose(bande["a"].dropna(), 0, atol=1e-12)
+        alterne = pd.DataFrame({"a": np.where(np.arange(n) % 2, .1, -.1)})
+        biais, lent, moyen, rapide = generalisation.bandes(alterne)
+        milieu = slice(400, n - 400)
+        np.testing.assert_allclose(lent["a"][milieu], 0, atol=1e-12)
+        np.testing.assert_allclose(moyen["a"][milieu], 0, atol=1e-12)
+        np.testing.assert_allclose(rapide["a"][milieu], alterne["a"][milieu], atol=1e-12)
 
     def test_reinitialisation_ne_transmet_que_sept_jours(self):
         heures = np.arange(1000) * diagnostic.donnees.H

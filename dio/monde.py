@@ -47,13 +47,15 @@ CONFIG_DEFAUT = {
     "sans": [],              # groupes de variables retirés (ablations)
     "memoire": True,         # False : ni encodeur ni récurrence ni correction de niveau (ablation)
     "bruit": 0.3,            # écart-type du bruit gaussien ajouté aux entrées normalisées (entraînement)
-    "masque_saaf": 0.0,      # part des heures d'une copie de chaque période où SAAF est masqué par blocs (0 : pas de copie)
-    "abandon_etats": 0.0,    # probabilité de mettre à 0 toutes les variables dmopcmd_etat_* d'un épisode (entraînement)
+    "masque_saaf": 0.1,      # part des heures d'une copie de chaque période où SAAF est masqué par blocs (0 : pas de copie)
+    "abandon_etats": 0.5,    # probabilité de mettre à 0 toutes les variables dmopcmd_etat_* d'un épisode (entraînement)
     "regime_partage": False,  # tête de régime commune à CIBLES_REGIME : mélange de K niveaux par circuit
     "regime_k": 2,           # nombre de régimes de la tête partagée
     "lambda_regime": 0.05,   # poids de la cross-entropie de régime (entraînement, avec regime_partage)
     "abandon_regime_contexte": 0.0,  # probabilité par épisode de masquer un bloc d'éclipses, modes FTL et DMOP
     "curriculum_jours": None,  # ex. [180, 365, 540] : jours_sim par parts égales des pas (None : jours_sim)
+    "physique": False,       # + flux solaire par face, ombre et moyennes passées 6/24/72 h (variables.physiques)
+    "familles": True,        # + comptes horaires par famille de commande dmop, vocabulaire appris à l'entraînement
     "exclure": None,         # [début, fin) en fractions de chaque période, retiré avec 7 jours de marge (hors bloc)
     "taille": 128,
     "couches": 2,
@@ -66,6 +68,7 @@ CONFIG_DEFAUT = {
     "lr": 3e-3,
     "weight_decay": 1e-4,
     "borne_niveau_prediction": 10.0,  # borne élargie seulement à la prédiction, circuits variables à l'entraînement
+    "facteur_niveau_prediction": 1.5,  # poids de la correction de niveau (rapide et lent) multipliés à la prédiction
     "ema": 0.99,             # décroissance de la moyenne exponentielle des poids (0 : pas de moyenne)
     "graines": [0, 1, 2, 3, 4],
     "threads": 4,
@@ -350,6 +353,11 @@ def exclure_bloc(bloc, debut, fin, marge=168):
     return [(heures[s:e], x.iloc[s:e], y[s:e], dmop) for s, e in ((0, a - marge), (b + marge, n)) if e > s]
 
 
+def construire_variables(x, config, dmop, voc_commandes):
+    return variables.construire(x, config["variables"], config["sans"], dmop, voc_commandes,
+                                config.get("physique", False), config.get("_familles"))
+
+
 def preparer_annees(annees, config):
     schema = donnees.charger_schema()
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
@@ -372,15 +380,16 @@ def preparer_annees(annees, config):
     if config.get("commandes") is not None:
         voc_commandes = commandes.apprendre([(dmop, heures, y) for heures, _, y, dmop in blocs],
                                             schema["target_columns"], config["commandes"])
+    if config.get("familles"):
+        config["_familles"] = variables.apprendre_familles([dmop for *_, dmop in blocs])
     periodes, copies = [], []
     for i, (_, x, y, dmop) in enumerate(blocs):
-        f, noms = variables.construire(x, config["variables"], config["sans"], dmop, voc_commandes)
+        f, noms = construire_variables(x, config, dmop, voc_commandes)
         periodes.append((f, y))
         if config.get("masque_saaf", 0.0) > 0:
             # Copie masquée en plus de l'originale ; les statistiques ne voient que les originales.
             x_masque = masquer_saaf(x, schema, config["masque_saaf"], graine=i)
-            copies.append((variables.construire(x_masque, config["variables"], config["sans"], dmop,
-                                                voc_commandes)[0], y))
+            copies.append((construire_variables(x_masque, config, dmop, voc_commandes)[0], y))
     return schema, periodes, noms, voc_commandes, copies
 
 
@@ -542,6 +551,15 @@ def charger(dossier):
             # Circuits variables (écart-type appris ≥ 0.01) ; aucune consommation future.
             modele.borne_niveau = torch.where(torch.as_tensor(stats["y_ecart"]) >= .01,
                                                borne, modele.borne_niveau).float()
+        facteur = float(config.get("facteur_niveau_prediction", 1.0))
+        if not np.isfinite(facteur) or facteur < 0:
+            raise ValueError("facteur_niveau_prediction doit être fini et positif")
+        if facteur != 1.0 and config["memoire"]:
+            # Hors bloc sur l'année d'entraînement, la correction apprise est trop faible : les poids
+            # appris en échantillon sous-estiment la persistance de l'écart initial hors échantillon.
+            with torch.no_grad():
+                modele.poids_niveau.mul_(facteur)
+                modele.poids_lent.mul_(facteur)
         modeles.append(modele.eval())
     return paquet, config, stats, modeles
 
@@ -551,7 +569,7 @@ def simuler(dossier, x_df, y_init, n_init, dmop=None):
     """Retourner (moyenne, écart-type) de l'ensemble sur toute la grille (heures init comprises)."""
     paquet, config, stats, modeles = charger(dossier)
     torch.set_num_threads(config["threads"])
-    f, noms = variables.construire(x_df, config["variables"], config["sans"], dmop, paquet.get("commandes"))
+    f, noms = construire_variables(x_df, config, dmop, paquet.get("commandes"))
     if noms != paquet["variables"]:
         raise ValueError("Variables différentes de celles de l'entraînement")
     x = torch.as_tensor(normaliser_entrees(f, stats)[None], dtype=torch.float32)

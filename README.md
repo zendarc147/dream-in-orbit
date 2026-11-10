@@ -16,17 +16,20 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | Ensemble mixte de world models GRU (v1 + bruit, v2r ; 2 × 5 graines) | 0.0863 | 0.0964 | 0.0914 |
 | + 600 pas avec moyenne exponentielle des poids + correction de niveau de power_init à demi-vie apprise | 0.0853 | 0.0940 | 0.0897 |
 | + commandes AOOO/ATTT (impulsions et états décalés) dans une branche vers NPWD2881 + correction de niveau sur le résidu (terme rapide + terme lent) | 0.0827 | 0.0892 | 0.0859 |
-| **+ borne du résidu initial élargie seulement à la prédiction pour les circuits variables à l'entraînement, modèle final** | **0.0827** | **0.0881** | **0.0854** |
+| + borne du résidu initial élargie seulement à la prédiction pour les circuits variables à l'entraînement | 0.0827 | 0.0881 | 0.0854 |
+| + régularisations de robustesse (masquage SAAF par blocs, abandon groupé des états de commandes) | 0.0826 | 0.0885 | 0.0855 |
+| **+ familles de commandes dmop en entrée du GRU + correction de niveau × 1.5 à la prédiction, modèle final** | **0.0791** | **0.0836** | **0.0813** |
 
-La borne reste à 5 pendant l'entraînement. À la prédiction, elle passe à 10 si
-l'écart-type appris du circuit atteint 0.01 ; les circuits presque constants
-gardent 5. Gain confirmé sur les graines 5–9, sans changement de la validation
-directe. Les départs décalés améliorent la moyenne et le pire cas, mais deux
-fenêtres inverses se dégradent légèrement : détail dans `docs/RESULTATS.md`.
+Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
+Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
+(vocabulaire appris sur l'entraînement). La correction de niveau issue de power_init est
+multipliée par 1.5 à la prédiction : estimé hors bloc sur l'année d'entraînement seule, ce facteur
+corrige une correction apprise trop faible. Graines 5–9 : 0.0787 / 0.0843. Gain dans les deux
+directions et sur plusieurs circuits ; NPWD2532 se dégrade. Détail, critères et limites dans
+`docs/RESULTATS.md`, section « Généralisation d'une année à l'autre ».
 
-Mélange mesuré, non livré : GRU + boosting à sacs temporels (poids 0.4) donne 0.0800 / 0.0861
-(graines 0–4) en validation, avec un gain dans les deux directions. Détail et limites dans
-`docs/RESULTATS.md`, section « Hybride ».
+Mélange mesuré avec le GRU précédent, non livré : GRU + boosting à sacs temporels (poids 0.4) donne
+0.0800 / 0.0861 (graines 0–4) en validation. Détail dans `docs/RESULTATS.md`, section « Hybride ».
 
 Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
@@ -133,7 +136,8 @@ train.py, predict.py             entraînement et prédiction (interface d'éval
 evaluate.py, make_validation.py  scripts du kit, inchangés
 dio/                             le modèle
   prepare.py                     contextes bruts -> 65 variables horaires (schéma appris sur annee1)
-  variables.py                   variables v2r : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin
+  variables.py                   variables v2r : fenêtres passées/futures, temps depuis/jusqu'à, phase orbitale, cos/sin ;
+                                 options physique (flux solaire par face) et familles de commandes dmop
   commandes.py                   commandes AOOO et ATTT : impulsions et états décalés (délai appris sur NPWD2881)
   donnees.py                     chargement des années préparées et des dossiers de test
   monde.py                       world model GRU (encodeur sur power_init, simulateur 2 couches, tête 33 circuits,
@@ -143,7 +147,7 @@ dio/                             le modèle
 baselines/                       constante, Ridge, gradient boosting (+ recalage sur power_init) ;
                                  boosting à sacs temporels et Ridge physique (composants de mélange)
 outils/                          validation, ablations, démo, diagnostics, lancement sur Kaggle,
-                                 mélange GRU + classique, empilement, résidu hors bloc
+                                 mélange GRU + classique, empilement, résidu hors bloc, généralisation
 tests/                           tests unitaires
 poids/                           poids du modèle final
 data/                            kit (annee1, annee2) et données horaires préparées

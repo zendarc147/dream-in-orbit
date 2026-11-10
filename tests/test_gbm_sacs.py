@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from baselines import gbm_sacs
-from dio import donnees
+from dio import donnees, variables
 
 H = donnees.H
 RACINE = Path(__file__).resolve().parent.parent
@@ -34,10 +34,10 @@ class TestSacs(unittest.TestCase):
     def test_familles_apprises_sur_l_entrainement_seul(self):
         entrainement = table(*[(i * H, "ATTTF321A") for i in range(15)], *[(i * H, "ATTTF321D") for i in range(5)],
                              *[(i * H, "AOOOF01D0") for i in range(19)])
-        familles = gbm_sacs.apprendre_familles([entrainement])
+        familles = variables.apprendre_familles([entrainement])
         self.assertEqual(familles, ["ATTTF321"])  # lettres fusionnées ; AOOOF01 sous le seuil
         test = table((0, "ATTTF321P"), (0, "AXXX999A"), (2 * H + 5, "ATTTF321A"))
-        comptes = gbm_sacs.comptes_familles(test, np.arange(3) * H, familles)
+        comptes = variables.comptes_familles(test, np.arange(3) * H, familles)
         self.assertEqual(comptes.columns.tolist(), ["dmopfam_ATTTF321_count"])
         np.testing.assert_array_equal(comptes.iloc[:, 0], [1, 0, 1])
 
@@ -48,13 +48,27 @@ class TestDonneesReelles(unittest.TestCase):
         x = pd.read_csv(RACINE / "data/prepared/annee1/X.csv", index_col="ut_ms").iloc[:2000]
         dmop = donnees.lire_dmop("annee1")
         dmop = dmop[dmop.ut_ms < x.index[-1] + H]
-        familles = gbm_sacs.apprendre_familles([dmop])
+        familles = variables.apprendre_familles([dmop])
         a = gbm_sacs.construire(x, dmop, "V2", familles)
         decalage = 1000 * H
         b = gbm_sacs.construire(x.set_axis(x.index + decalage), dmop.assign(ut_ms=dmop.ut_ms + decalage),
                                 "V2", familles)
         np.testing.assert_array_equal(a.to_numpy(), b.to_numpy())
         self.assertTrue(np.isfinite(a.to_numpy()).all())
+
+    def test_physique_causale_et_options_du_world_model(self):
+        """Les variables physiques à l'heure t ne lisent rien après t ; les options du GRU ajoutent
+        exactement les colonnes physiques et familles."""
+        x = pd.read_csv(RACINE / "data/prepared/annee1/X.csv", index_col="ut_ms").iloc[:500]
+        futur = x.copy()
+        futur.iloc[300:] = futur.iloc[300:].to_numpy()[::-1]
+        a, b = variables.physiques(x), variables.physiques(futur)
+        pd.testing.assert_frame_equal(a.iloc[:300], b.iloc[:300])
+        dmop = donnees.lire_dmop("annee1")
+        base, noms_base = variables.construire(x, "v1", (), dmop)
+        f, noms = variables.construire(x, "v1", (), dmop, physique=True, familles=["ATTTF321"])
+        self.assertEqual(noms, noms_base + list(a.columns) + ["dmopfam_ATTTF321_count"])
+        np.testing.assert_array_equal(f[:, :len(noms_base)], base)
 
     @unittest.skipUnless(VALIDATION.is_dir(), "validation/ absent (make_validation.py)")
     def test_power_init_n_entre_pas_dans_les_variables(self):

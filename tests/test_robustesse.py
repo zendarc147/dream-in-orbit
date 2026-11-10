@@ -94,12 +94,9 @@ class EntrainementTest(unittest.TestCase):
 
     def test_regularisations(self):
         with tempfile.TemporaryDirectory() as temp:
-            reference = self.entrainer(Path(temp) / "ref")
-            nulle = self.entrainer(Path(temp) / "nulle", masque_saaf=0.0, abandon_etats=0.0)
+            # Les régularisations sont actives par défaut : la référence les coupe explicitement.
+            reference = self.entrainer(Path(temp) / "ref", masque_saaf=0.0, abandon_etats=0.0)
             masque = self.entrainer(Path(temp) / "masque", masque_saaf=0.1, abandon_etats=1.0)
-            # Valeurs nulles : exactement l'entraînement actuel.
-            for a, b in zip(reference["etats"][0].values(), nulle["etats"][0].values()):
-                self.assertTrue(torch.equal(a, b))
             # Copies masquées : statistiques, variables et sélection inchangées.
             for nom, valeur in reference["stats"].items():
                 self.assertTrue(torch.equal(valeur, masque["stats"][nom]), nom)
