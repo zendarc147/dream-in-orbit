@@ -701,3 +701,21 @@ Entraîné sur annee1 + annee2 en 937 s sur T4 Kaggle ; poids 8.2 Mo (au lieu de
 pas été régénérées avec ce modèle.
 
 Coût de la session : environ 2 h de GPU T4 (référence, 6 essais, modèle final), 2 × 4 min de CPU local pour le facteur hors bloc, 2 × 75 s pour l'attribution du boosting.
+
+## Ensemble GRU + boosting enrichi — 11 novembre 2026
+
+Journal complet (hypothèses, commandes, tableaux, décisions) : `docs/JOURNAL_ENSEMBLE.md`.
+Calculs en local (CPU), prédictions de référence du GRU recalculées en local (la directe est
+identique à Kaggle ; en inverse, `power_init` local suit la procédure officielle minute par minute).
+
+- Mélange du GRU actuel avec l'ancien boosting B_V2 : gain 0.0009 seulement au poids 0.2 (le GRU
+  avec familles a absorbé une partie de l'apport du boosting).
+- Ablations séparées du boosting : commandes planifiées par famille (+ gain inverse 0.0898 →
+  0.0831 seul) et moyennes exponentielles retenues ; fenêtres passées 6–168 h, retrait des
+  variables lentes de ltdata (horloge indirecte), réglage lent régularisé (600 itérations) et
+  embargo 0 / 720 h rejetés.
+- Boosting retenu (B_V2 + planning + ema) seul : 0.0858 / 0.0828.
+- Ensemble 0.7 GRU + 0.3 boosting, poids fixé avant l'entraînement final : 0.077975 / 0.081042
+  (graines 0–4) et 0.077769 / 0.081435 (graines 5–9), contre 0.079062 / 0.083579 et 0.078719 /
+  0.084229 pour le GRU seul. Installé dans `poids/` (modèle `gru_gbm`) ; poids +16 Mo,
+  prédiction 18 s et 1.4 Go.

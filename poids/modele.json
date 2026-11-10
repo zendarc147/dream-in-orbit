@@ -1,21 +1,10 @@
 {
-  "modele": "gru_mixte",
+  "modele": "gru_gbm",
   "annees": [
     "annee1",
     "annee2"
   ],
   "options": {
-    "masque_saaf": 0.1,
-    "abandon_etats": 0.5,
-    "borne_niveau_prediction": 10.0,
-    "graines": [
-      0,
-      1,
-      2,
-      3,
-      4
-    ],
-    "familles": true,
-    "facteur_niveau_prediction": 1.5
+    "gru_depuis": "poids"
   }
 }

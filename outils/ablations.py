@@ -30,6 +30,8 @@ def main():
     ap.add_argument("--options", default="{}", help="options JSON communes (surchargent poids/modele.json)")
     args = ap.parse_args()
     base = json.loads((RACINE / "poids/modele.json").read_text()).get("options", {})
+    # Options du world model seulement (le modèle installé peut être l'ensemble gru_gbm).
+    base = {k: v for k, v in base.items() if k not in ("gru_depuis", "poids_gbm", "gbm")}
     base = {**base, **json.loads(args.options)}
     if args.graines is not None:
         base["graines"] = args.graines

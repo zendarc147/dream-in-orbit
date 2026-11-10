@@ -162,3 +162,68 @@ Lecture :
   modèle trois fois plus lourd : rejet.
 - **embargo** : 0 h dégrade (les sacs voient les heures voisines de leur bloc, le boosting
   apprend des structures très locales), 720 h ne change rien : 168 h conservé.
+
+### Combinaison des familles retenues (11 nov., 02 h 30)
+
+```
+bash outils/ablations_gbm.sh p2_planning_ema '{"config": "B", "jeu": "V2", "ajouts": ["planning", "ema"]}'
+```
+
+| Poids du boosting | 0 | 0.1 | 0.2 | **0.3** | 0.4 | 0.5 |
+|---|---:|---:|---:|---:|---:|---:|
+| Directe, graines 0–4 | 0.07906 | 0.07839 | 0.07803 | **0.07797** | 0.07823 | 0.07878 |
+| Directe, graines 5–9 | 0.07872 | 0.07810 | 0.07778 | **0.07777** | 0.07806 | 0.07866 |
+| Inverse, graines 0–4 | 0.08358 | 0.08252 | 0.08168 | **0.08104** | 0.08063 | 0.08043 |
+| Inverse, graines 5–9 | 0.08423 | 0.08308 | 0.08215 | **0.08144** | 0.08094 | 0.08068 |
+| Moyenne | 0.08140 | 0.08053 | 0.07991 | **0.07956** | 0.07946 | 0.07964 |
+
+Boosting seul : 0.085825 / 0.082774 (B_V2 : 0.087305 / 0.089753). Les deux ajouts se
+cumulent : mélange −0.00104 contre B_V2, −0.0018 à −0.0019 contre le GRU seul.
+
+## Phase 3 — intégration (11 nov., 02 h 30 – 03 h 30)
+
+**Poids du mélange : 0.3, fixé avant l'entraînement final.** Le minimum de la moyenne des
+4 RMSE est à 0.4 (0.07946 contre 0.07956 à 0.3), mais à 0.4 la seconde moitié de la directe
+se dégrade (0.08638 → 0.08655 ; 0.08621 → 0.08649), alors qu'à 0.3 les 8 moitiés de période
+gagnent. À 0.3 : blocs de 30 jours gagnants 18, 17 / 23 (directe), 18, 20 / 23 (inverse), contre
+16, 15, 18, 19 à 0.4 ; pire régression d'un circuit +0.0018 (NPWD2561, 2851 en directe ;
+2401, 2482 en inverse, circuits presque constants) contre +0.0031 à 0.4. 0.3 est aussi le
+poids optimal de la directe seule et laisse 70 % au world model. Un seul poids pour les 33
+circuits, aucun poids par circuit.
+
+Composants : world model GRU mixte installé le 10 novembre (inchangé, membres identiques au bit
+près) + boosting B_V2 + planning + ema entraîné sur annee1 + annee2 (5 sacs temporels sur la
+période fusionnée). Modèle `gru_gbm` (`dio/ensemble.py`), devenu `modeles.FINAL`.
+
+Validation bout en bout par `predict.py` → `evaluate.py` (`runs/p3_val_g04`, `runs/p3_val_g59` :
+GRU de validation + boosting `p2_planning_ema`, poids 0.3) :
+
+| | Directe | Inverse | Moyenne |
+|---|---:|---:|---:|
+| GRU seul, graines 0–4 | 0.079062 | 0.083579 | 0.081320 |
+| **Ensemble, graines 0–4** | **0.077975** | **0.081042** | **0.079509** |
+| GRU seul, graines 5–9 | 0.078719 | 0.084229 | 0.081474 |
+| **Ensemble, graines 5–9** | **0.077769** | **0.081435** | **0.079602** |
+
+Entraînement final et installation :
+
+```
+python train.py --modele gru_gbm --out runs/p3_final --options '{"gru_depuis": "poids"}'
+```
+
+- 5 min 38 s sur CPU local (16 cœurs) : boosting 2 années, puis compression lzma. Second
+  entraînement identique (`runs/p3_final_bis`) : prédictions identiques au bit près sur les
+  deux dossiers de validation.
+- Poids : GRU 8.2 Mo + boosting 16.0 Mo (`gbm/gbm_sacs.pkl.xz`, 126 Mo sans compression).
+- Prédiction : 18 s et 1.44 Go au pic (directe), 19 s et 1.43 Go (inverse), contre 11 s et
+  0.89 Go pour le GRU seul (mesures `resource.getrusage` des processus fils).
+- `tests/test_ensemble.py` sur les poids installés : 33 colonnes + `ut_ms`, heures égales à
+  `heures_a_predire.csv`, valeurs finies et positives ; deux prédictions identiques ; ensemble =
+  0.7 × GRU seul + 0.3 × boosting seul (options `poids_gbm` 0 et 1) ; un `power_init` qui
+  empiète sur les heures à prédire est refusé (seule consommation lue : les 7 jours) ; un
+  circuit entièrement absent et un jour manquant dans `power_init` donnent des prédictions
+  finies. Suite complète : 67 tests, OK.
+- Critère d'installation rempli (les deux directions et les deux groupes de graines baissent) :
+  candidat copié dans `poids/`. Anciens poids : `runs/p3_poids_precedents/` (copie locale) et
+  commit `8a4d761` (`git checkout 8a4d761 -- poids/`) ; retour au GRU seul sans changer de
+  poids : `python predict.py ... --options '{"poids_gbm": 0}'`.

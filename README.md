@@ -4,7 +4,7 @@ Un réseau de neurones récurrent apprend comment le satellite réagit à son pl
 (commandes dmop, dont les commandes AOOO et ATTT, modes de pointage ftl) et à son contexte (Soleil saaf, événements evtf,
 tendances ltdata), puis simule seul ses 33 circuits heure par heure sur toute une période,
 à partir de ses 7 premiers jours réels (`power_init.csv`). Sujet : [`docs/sujet.md`](docs/sujet.md).
-Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Ablations : [`docs/ABLATIONS.md`](docs/ABLATIONS.md).
+Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Ablations : [`docs/ABLATIONS.md`](docs/ABLATIONS.md). Ensemble GRU + boosting : [`docs/JOURNAL_ENSEMBLE.md`](docs/JOURNAL_ENSEMBLE.md).
 
 ## Résultats (RMSE, `evaluate.py`)
 
@@ -18,7 +18,8 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + commandes AOOO/ATTT (impulsions et états décalés) dans une branche vers NPWD2881 + correction de niveau sur le résidu (terme rapide + terme lent) | 0.0827 | 0.0892 | 0.0859 |
 | + borne du résidu initial élargie seulement à la prédiction pour les circuits variables à l'entraînement | 0.0827 | 0.0881 | 0.0854 |
 | + régularisations de robustesse (masquage SAAF par blocs, abandon groupé des états de commandes) | 0.0826 | 0.0885 | 0.0855 |
-| **+ familles de commandes dmop en entrée du GRU + correction de niveau × 1.5 à la prédiction, modèle final** | **0.0791** | **0.0836** | **0.0813** |
+| + familles de commandes dmop en entrée du GRU + correction de niveau × 1.5 à la prédiction | 0.0791 | 0.0836 | 0.0813 |
+| **+ mélange avec un boosting à sacs temporels enrichi (commandes planifiées, moyennes exponentielles), poids 0.3, modèle final** | **0.0780** | **0.0810** | **0.0795** |
 
 Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
 Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
@@ -28,8 +29,14 @@ corrige une correction apprise trop faible. Graines 5–9 : 0.0787 / 0.0843. Gai
 directions et sur plusieurs circuits ; NPWD2532 se dégrade. Détail, critères et limites dans
 `docs/RESULTATS.md`, section « Généralisation d'une année à l'autre ».
 
-Mélange mesuré avec le GRU précédent, non livré : GRU + boosting à sacs temporels (poids 0.4) donne
-0.0800 / 0.0861 (graines 0–4) en validation. Détail dans `docs/RESULTATS.md`, section « Hybride ».
+Le modèle final est un ensemble : 0.7 × world model GRU + 0.3 × boosting à sacs temporels
+(un HistGradientBoosting par circuit, 5 sacs). Le boosting, sans mémoire, reçoit en plus des
+variables du GRU les commandes planifiées par famille (heures depuis la dernière, comptes dans
+l'heure et les six heures suivantes, périodes début/fin appariées) et des moyennes
+exponentielles du flux solaire, de l'ombre, du pointage et des communications. Ensemble, graines
+0–4 : 0.0780 / 0.0810 ; graines 5–9 : 0.0778 / 0.0814 (GRU seul : 0.0791 / 0.0836 et
+0.0787 / 0.0842, recalculés en local). Le GRU reste majoritaire et le retour au GRU seul est
+une option de prédiction. Ablations, critères et limites : `docs/JOURNAL_ENSEMBLE.md`.
 
 Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
@@ -54,7 +61,14 @@ python predict.py --test_dir DOSSIER --out predictions.csv
 
 `DOSSIER` contient `dmop.csv`, `evtf.csv`, `ftl.csv`, `saaf.csv`, `ltdata.csv`,
 `power_init.csv` et `heures_a_predire.csv`. Les poids commités sont dans `poids/`
-(`modele.json`, `membres.json`, `membre*/monde.pt`). Environ 20 s sur CPU.
+(`modele.json`, `ensemble.json`, `membres.json`, `membre*/monde.pt`, `gbm/gbm_sacs.pkl.xz`).
+Environ 20 s et 1.5 Go de mémoire sur CPU.
+
+GRU seul (sans le boosting), avec les mêmes poids :
+
+```bash
+python predict.py --test_dir DOSSIER --out predictions.csv --options '{"poids_gbm": 0}'
+```
 
 Avec l'incertitude (écart-type de l'ensemble) :
 
@@ -68,7 +82,15 @@ python predict.py --test_dir DOSSIER --out pred.csv --options '{"sortie_incertit
 python train.py
 ```
 
-Entraîne l'ensemble final sur annee1 + annee2 et écrit `poids/`. Les données horaires
+Entraîne l'ensemble final (world models GRU puis boosting) sur annee1 + annee2 et écrit
+`poids/`. Pour ne réentraîner que le boosting (environ 6 min sur CPU) en gardant les world
+models déjà installés, ce qui reproduit exactement les poids livrés :
+
+```bash
+python train.py --options '{"gru_depuis": "poids"}'
+```
+
+Les données horaires
 sont lues dans `data/prepared/` ; si elles manquent, `dio/prepare.py` les recrée à partir
 de `data/annee*/` (qui doit alors contenir `power.csv`). Les deux années se suivent
 sans trou : elles forment une seule période, et les épisodes d'entraînement peuvent
@@ -142,10 +164,12 @@ dio/                             le modèle
   donnees.py                     chargement des années préparées et des dossiers de test
   monde.py                       world model GRU (encodeur sur power_init, simulateur 2 couches, tête 33 circuits,
                                  correction de niveau, branche des commandes AOOO/ATTT vers NPWD2881)
-  mixte.py                       modèle final : moyenne de deux ensembles de world models (variables v1 et v2r)
+  mixte.py                       moyenne de deux ensembles de world models (variables v1 et v2r)
+  ensemble.py                    modèle final : 0.7 × world models (mixte.py) + 0.3 × boosting à sacs (gbm_sacs.py)
+  autoregressif.py               étude non livrée : GRU autorégressif, flux continus, scheduled sampling
   modeles.py                     registre des modèles utilisables par train.py et predict.py
 baselines/                       constante, Ridge, gradient boosting (+ recalage sur power_init) ;
-                                 boosting à sacs temporels et Ridge physique (composants de mélange)
+                                 boosting à sacs temporels (composant du modèle final) et Ridge physique
 outils/                          validation, ablations, démo, diagnostics, lancement sur Kaggle,
                                  mélange GRU + classique, empilement, résidu hors bloc, généralisation
 tests/                           tests unitaires

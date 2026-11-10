@@ -10,7 +10,7 @@ MODELES = {
     "gru_gbm": "dio.ensemble",
     "gru_ar": "dio.autoregressif",
 }
-FINAL = "gru_mixte"
+FINAL = "gru_gbm"
 
 
 def module(nom):

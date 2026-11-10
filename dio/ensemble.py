@@ -27,11 +27,12 @@ def entrainer(annees, dossier, poids_gbm=POIDS_GBM, gbm=None, gru_depuis=None, *
     if gru_depuis and Path(gru_depuis).resolve() != dossier.resolve():
         dossier.mkdir(parents=True, exist_ok=True)
         shutil.copy(Path(gru_depuis) / "membres.json", dossier / "membres.json")
-        for membre in sorted(Path(gru_depuis).glob("membre*")):
+        for membre in sorted(Path(gru_depuis).glob("membre[0-9]*")):
             shutil.copytree(membre, dossier / membre.name, dirs_exist_ok=True)
     elif not gru_depuis:
         mixte.entrainer(annees, dossier, **options)
     gbm_sacs.entrainer(annees, dossier / "gbm", **{**GBM_DEFAUT, **(gbm or {})})
+    (dossier / "gbm" / "hors_sac.csv").unlink(missing_ok=True)  # diagnostic d'empilement, inutile ici
     (dossier / "ensemble.json").write_text(json.dumps({"poids_gbm": poids_gbm}, indent=2) + "\n")
 
 
