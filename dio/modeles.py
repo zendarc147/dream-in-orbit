@@ -7,6 +7,8 @@ MODELES = {
     "lineaire": "baselines.lineaire",
     "gru": "dio.monde",
     "gru_mixte": "dio.mixte",
+    "gru_gbm": "dio.ensemble",
+    "gru_ar": "dio.autoregressif",
 }
 FINAL = "gru_mixte"
 

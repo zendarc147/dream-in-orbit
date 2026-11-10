@@ -42,6 +42,42 @@ class TestSacs(unittest.TestCase):
         np.testing.assert_array_equal(comptes.iloc[:, 0], [1, 0, 1])
 
 
+class TestPlanning(unittest.TestCase):
+    def test_vocabulaire_recence_futur_et_periodes(self):
+        entrainement = table(*[(i * H, "ATTTF321A") for i in range(20)], *[(i * H, f"MOCS.{i:010d}") for i in range(20)],
+                             *[(i * H, f"MOCE.{i:010d}") for i in range(20)], *[(i * H, "AXXX301A") for i in range(5)])
+        planning = gbm_sacs.apprendre_planning([entrainement])
+        self.assertEqual(planning, {"familles": ["ATTTF321", "MOCE", "MOCS"], "paires": [("MOCS", "MOCE")]})
+        # Test : ATTTF321B (variante inconnue, même famille) à l'heure 2 ; période MOCS.7 de 1 h 30 à 3 h.
+        test = table((2 * H + 10, "ATTTF321B"), (H + H // 2, "MOCS.0000000007"), (3 * H, "MOCE.0000000007"),
+                     (0, "MOCE.0000000099"))
+        f = gbm_sacs.variables_planning(test, np.arange(6) * H, planning)
+        np.testing.assert_allclose(f["plan_ATTTF321_depuis_h"], [168, 168, (H - 10) / H, (2 * H - 10) / H,
+                                                                 (3 * H - 10) / H, (4 * H - 10) / H])
+        np.testing.assert_array_equal(f["plan_ATTTF321_futur1h"], [0, 1, 0, 0, 0, 0])
+        np.testing.assert_array_equal(f["plan_ATTTF321_futur6h"], [1, 1, 0, 0, 0, 0])
+        np.testing.assert_allclose(f["plan_MOCS_MOCE_actif"], [0, 0.5, 1, 0, 0, 0])
+        absente = gbm_sacs.variables_planning(table((0, "AXXX301A")), np.arange(3) * H, planning)
+        np.testing.assert_array_equal(absente["plan_MOCS_depuis_h"], [168, 168, 168])
+
+    def test_historique_et_moyennes_exponentielles_causales(self):
+        x = pd.read_csv(RACINE / "data/prepared/annee1/X.csv", index_col="ut_ms").iloc[:600]
+        futur = x.copy()
+        futur.iloc[400:] = futur.iloc[400:].to_numpy()[::-1]
+        for fonction in (lambda t: gbm_sacs.historique(t, set()), gbm_sacs.moyennes_exponentielles):
+            a, b = fonction(x), fonction(futur)
+            pd.testing.assert_frame_equal(a.iloc[:400], b.iloc[:400])
+        constante = gbm_sacs.moyennes_exponentielles(x.iloc[:1].reindex(x.index[:50], method="ffill"))
+        np.testing.assert_allclose(constante.to_numpy(), np.broadcast_to(constante.iloc[0], constante.shape))
+
+    def test_sans_horloge_retire_seulement_ltdata_lentes(self):
+        x = pd.read_csv(RACINE / "data/prepared/annee1/X.csv", index_col="ut_ms").iloc[:300]
+        dmop = donnees.lire_dmop("annee1")
+        a = gbm_sacs.construire(x, dmop, "V2", [])
+        b = gbm_sacs.construire(x, dmop, "V2", [], sans_horloge=True)
+        self.assertEqual(sorted(set(a.columns) - set(b.columns)), sorted(gbm_sacs.HORLOGE))
+
+
 class TestDonneesReelles(unittest.TestCase):
     def test_aucune_horloge_absolue(self):
         """Décaler toute la période dans le temps ne change aucune variable."""
@@ -49,10 +85,11 @@ class TestDonneesReelles(unittest.TestCase):
         dmop = donnees.lire_dmop("annee1")
         dmop = dmop[dmop.ut_ms < x.index[-1] + H]
         familles = variables.apprendre_familles([dmop])
-        a = gbm_sacs.construire(x, dmop, "V2", familles)
+        planning, ajouts = gbm_sacs.apprendre_planning([dmop]), ("planning", "historique", "ema")
+        a = gbm_sacs.construire(x, dmop, "V2", familles, ajouts, planning)
         decalage = 1000 * H
         b = gbm_sacs.construire(x.set_axis(x.index + decalage), dmop.assign(ut_ms=dmop.ut_ms + decalage),
-                                "V2", familles)
+                                "V2", familles, ajouts, planning)
         np.testing.assert_array_equal(a.to_numpy(), b.to_numpy())
         self.assertTrue(np.isfinite(a.to_numpy()).all())
 
