@@ -3,6 +3,8 @@ import importlib
 
 MODELES = {
     "boosting": "baselines.boosting",
+    "gbm_sacs": "baselines.gbm_sacs",
+    "lineaire": "baselines.lineaire",
     "gru": "dio.monde",
     "gru_mixte": "dio.mixte",
 }

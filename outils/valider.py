@@ -62,7 +62,8 @@ def valider(nom, modele, options, options_prediction, entrainer=True, directions
     for direction in directions:
         annee, validation = DIRECTIONS[direction]
         poids = RACINE / "runs" / nom / direction
-        pred = poids / "pred.csv"
+        # Une variante de prédiction n'écrase pas pred.csv (même suffixe que son fichier de scores).
+        pred = poids / (f"pred_{json.dumps(options_prediction)}.csv" if options_prediction else "pred.csv")
         debut = time.time()
         lancer(["predict.py", "--test_dir", validation / "test", "--out", pred, "--poids", poids,
                 "--options", json.dumps(options_prediction)])

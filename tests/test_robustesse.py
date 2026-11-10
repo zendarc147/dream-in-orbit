@@ -117,6 +117,24 @@ class EntrainementTest(unittest.TestCase):
             torch.manual_seed(2)
             torch.testing.assert_close(modele(x[:, :168], y, x[:, 168:]), a, rtol=0, atol=0)
 
+    def test_bloc_exclu_absent_des_statistiques(self):
+        """Hors bloc : les courants du bloc écarté (et de sa marge) ne touchent pas l'entraînement."""
+        _, _, y = donnees.charger_annee("annee1")
+        n, (a, b) = len(y), (5496, 10992)
+        with tempfile.TemporaryDirectory() as temp:
+            paquet = self.entrainer(Path(temp) / "hors", exclure=[a / n, b / n])
+        gardees = np.concatenate([y[:a - 168], y[b + 168:]])
+        np.testing.assert_allclose(paquet["stats"]["y_moyenne"].numpy(), np.nanmean(gardees, axis=0))
+
+
+class ExclusionTest(unittest.TestCase):
+    def test_morceaux_autour_du_bloc(self):
+        heures = np.arange(1000)
+        x = pd.DataFrame({"a": np.arange(1000.0)}, index=heures)
+        morceaux = monde.exclure_bloc((heures, x, np.arange(1000.0)[:, None], None), 0.4, 0.6, marge=50)
+        self.assertEqual([(m[0][0], m[0][-1]) for m in morceaux], [(0, 349), (650, 999)])
+        self.assertEqual(len(monde.exclure_bloc((heures, x, x.to_numpy(), None), 0.0, 0.5, marge=50)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

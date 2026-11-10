@@ -54,6 +54,7 @@ CONFIG_DEFAUT = {
     "lambda_regime": 0.05,   # poids de la cross-entropie de régime (entraînement, avec regime_partage)
     "abandon_regime_contexte": 0.0,  # probabilité par épisode de masquer un bloc d'éclipses, modes FTL et DMOP
     "curriculum_jours": None,  # ex. [180, 365, 540] : jours_sim par parts égales des pas (None : jours_sim)
+    "exclure": None,         # [début, fin) en fractions de chaque période, retiré avec 7 jours de marge (hors bloc)
     "taille": 128,
     "couches": 2,
     "dropout": 0.1,
@@ -340,6 +341,15 @@ def normaliser_courants(y, moyenne, ecart):
     return np.concatenate([yn, connus.astype(np.float64)], axis=-1)
 
 
+def exclure_bloc(bloc, debut, fin, marge=168):
+    """Morceaux d'une période (heures, x, y, dmop) hors de [debut, fin) (fractions) et de `marge`
+    heures de chaque côté. La table dmop reste entière : c'est du planning, pas une mesure."""
+    heures, x, y, dmop = bloc
+    n = len(heures)
+    a, b = int(round(debut * n)), int(round(fin * n))
+    return [(heures[s:e], x.iloc[s:e], y[s:e], dmop) for s, e in ((0, a - marge), (b + marge, n)) if e > s]
+
+
 def preparer_annees(annees, config):
     schema = donnees.charger_schema()
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
@@ -354,6 +364,10 @@ def preparer_annees(annees, config):
             heures, x, y = np.concatenate([avant[0], heures]), pd.concat([avant[1], x]), np.concatenate([avant[2], y])
             dmop = pd.concat([avant[3], dmop], ignore_index=True)
         blocs.append((heures, x, y, dmop))
+    if config.get("exclure"):
+        # Validation interne : le bloc écarté ne sert ni aux statistiques, ni au vocabulaire des
+        # commandes, ni aux épisodes ; les morceaux restants deviennent des périodes séparées.
+        blocs = [morceau for bloc in blocs for morceau in exclure_bloc(bloc, *config["exclure"])]
     voc_commandes = None
     if config.get("commandes") is not None:
         voc_commandes = commandes.apprendre([(dmop, heures, y) for heures, _, y, dmop in blocs],

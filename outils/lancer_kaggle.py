@@ -6,6 +6,7 @@
     python outils/lancer_kaggle.py --rapatrier
     python outils/lancer_kaggle.py --fente 2 -- outils/valider.py --nom essai2   # 2e lancement simultané (2 au plus)
     python outils/lancer_kaggle.py -- outils/valider.py --nom a ";" outils/valider.py --nom b   # à la suite, une session
+    python outils/lancer_kaggle.py --cpu -- outils/valider.py --nom gbm --modele gbm_sacs   # sans GPU
 
 Le dépôt tel qu'il est sur le disque (fichiers suivis et non suivis, hors .gitignore) part
 sur Kaggle : les données (data/) dans le dataset privé
@@ -91,13 +92,13 @@ def envoyer_donnees(dossier, forcer):
         raise RuntimeError(f"Dataset non prêt : {sortie}")
 
 
-def pousser_noyau(dossier, commande):
+def pousser_noyau(dossier, commande, gpu=True):
     """Le code (hors données) part dans le script du noyau, encodé en base64 : il est toujours
     celui du disque au moment du lancement, sans attendre une nouvelle version du dataset."""
     paquet = io.BytesIO()
     with tarfile.open(fileobj=paquet, mode="w:gz") as tar:
         for f in fichiers_depot():
-            if not f.startswith(DONNEES + ("poids/",)):
+            if not f.startswith(DONNEES + ("poids/", "poids_candidats/")):
                 tar.add(RACINE / f, arcname=f)
         contenu = json.dumps(commande).encode()
         info = tarfile.TarInfo("kaggle_commande.json")
@@ -106,22 +107,26 @@ def pousser_noyau(dossier, commande):
     print(f"Code empaqueté : {paquet.tell() / 1e3:.0f} ko", flush=True)
     script = (RACINE / "outils" / "kaggle_distant.py").read_text()
     (dossier / "distant.py").write_text(f'CODE = "{base64.b64encode(paquet.getvalue()).decode()}"\n' + script)
-    (dossier / "kernel-metadata.json").write_text(json.dumps({
+    metadonnees = {
         "id": NOYAU, "title": NOYAU.split("/")[1], "code_file": "distant.py", "language": "python",
-        "kernel_type": "script", "is_private": True, "enable_gpu": True, "enable_internet": True,
-        "machine_shape": "NvidiaTeslaT4", "dataset_sources": [DATASET],
-    }))
+        "kernel_type": "script", "is_private": True, "enable_gpu": gpu, "enable_internet": True,
+        "dataset_sources": [DATASET],
+    }
+    if gpu:
+        metadonnees["machine_shape"] = "NvidiaTeslaT4"
+    (dossier / "kernel-metadata.json").write_text(json.dumps(metadonnees))
     sortie = kaggle("kernels", "push", "-p", str(dossier)).stdout.strip()
     print(sortie, flush=True)
     if "error" in sortie.lower():  # la CLI rend 0 même quand Kaggle refuse (ex. 2 sessions GPU au plus)
         raise RuntimeError(sortie)
 
 
-def rapatrier():
+def rapatrier(motif=None):
     statut, sortie = attendre(["kernels", "status", NOYAU],
                               lambda s: next((m for m in ("complete", "error", "cancel") if m in s), None))
     dossier = RACINE / "runs" / "_kaggle" / (time.strftime("%Y%m%d_%H%M%S") + NOYAU.removeprefix(f"{UTILISATEUR}/dream-in-orbit"))
-    kaggle("kernels", "output", NOYAU, "-p", str(dossier), "-o", "-q")
+    filtre = ["--file-pattern", motif] if motif else []
+    kaggle("kernels", "output", NOYAU, "-p", str(dossier), "-o", "-q", *filtre)
     for sous in dossier.iterdir():
         if sous.is_dir():  # runs/, poids/, ou docs/ pour un fichier comme docs/ABLATIONS.md
             shutil.copytree(sous, RACINE / sous.name, dirs_exist_ok=True)
@@ -141,6 +146,9 @@ def main():
     ap.add_argument("--rapatrier", action="store_true", help="attendre le dernier lancement et rapatrier")
     ap.add_argument("--donnees", action="store_true", help="renvoyer data/ (après un changement)")
     ap.add_argument("--fente", default="", help="numéro de fente pour lancer en parallèle (défaut : aucune)")
+    ap.add_argument("--cpu", action="store_true", help="session CPU sans GPU (boosting, diagnostics)")
+    ap.add_argument("--legers", action="store_true",
+                    help="rapatrier seulement csv, json et journaux (pas les poids, longs à télécharger)")
     ap.add_argument("args", nargs="*", help="script et arguments, après --")
     a = ap.parse_args()
     fente(a.fente)
@@ -157,12 +165,12 @@ def main():
                 else:
                     courante.append(mot)
             envoyer_donnees(Path(tmp) / "dataset", a.donnees)
-            pousser_noyau(Path(tmp) / "noyau", {"commandes": commandes, "recuperer": a.recuperer})
+            pousser_noyau(Path(tmp) / "noyau", {"commandes": commandes, "recuperer": a.recuperer}, not a.cpu)
         print(f"Lancé : https://www.kaggle.com/code/{NOYAU}", flush=True)
         if a.sans_attendre:
             return
         time.sleep(30)  # laisser Kaggle enregistrer la nouvelle version avant de lire son statut
-    rapatrier()
+    rapatrier(r"\.(csv|json|log)$" if a.legers else None)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,10 @@ gardent 5. Gain confirmé sur les graines 5–9, sans changement de la validatio
 directe. Les départs décalés améliorent la moyenne et le pire cas, mais deux
 fenêtres inverses se dégradent légèrement : détail dans `docs/RESULTATS.md`.
 
+Mélange mesuré, non livré : GRU + boosting à sacs temporels (poids 0.4) donne 0.0800 / 0.0861
+(graines 0–4) en validation, avec un gain dans les deux directions. Détail et limites dans
+`docs/RESULTATS.md`, section « Hybride ».
+
 Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
 
@@ -136,8 +140,10 @@ dio/                             le modèle
                                  correction de niveau, branche des commandes AOOO/ATTT vers NPWD2881)
   mixte.py                       modèle final : moyenne de deux ensembles de world models (variables v1 et v2r)
   modeles.py                     registre des modèles utilisables par train.py et predict.py
-baselines/                       constante, Ridge, gradient boosting (+ recalage sur power_init)
-outils/                          validation, ablations, démo, diagnostics, lancement sur Kaggle
+baselines/                       constante, Ridge, gradient boosting (+ recalage sur power_init) ;
+                                 boosting à sacs temporels et Ridge physique (composants de mélange)
+outils/                          validation, ablations, démo, diagnostics, lancement sur Kaggle,
+                                 mélange GRU + classique, empilement, résidu hors bloc
 tests/                           tests unitaires
 poids/                           poids du modèle final
 data/                            kit (annee1, annee2) et données horaires préparées
