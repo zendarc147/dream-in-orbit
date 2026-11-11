@@ -57,6 +57,9 @@ HARMONIQUES_ORBITE = (2, 3, 4)
 PLAFOND_RECENCE_H = 168
 # Comptes horaires des commandes exactes de prepare.py (lettre de variante comprise, ex. dmop_AAAAF20C1_count).
 LETTRES = [r"dmop_(?!other_count|total_count)\w+_count"]
+# Noms utilisables dans retirer (évite d'écrire les expressions dans le JSON des options).
+RETRAITS = {"lettres": LETTRES, "distance_terre": ["ltdata_earthmars_km", "ltdata_sunmarsearthangle_deg"],
+            "ema": [r".*_ema\d+h"]}
 AJOUTS_CONTEXTE = {"geometrie", "altitude", "ombres", "contacts"}
 DECALAGES = (-3, -2, -1, 1, 2, 3)
 ORBITE_HORAIRE = ["orbite_pericentre_depuis_h", "orbite_pericentre_jusqua_h", "orbite_phase_cos", "orbite_phase_sin"]
@@ -363,7 +366,8 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
     if sans_horloge:
         table = table.drop(columns=HORLOGE)
     if retirer:
-        table = table.loc[:, ~table.columns.str.fullmatch("|".join(retirer))]
+        motifs = [m for r in retirer for m in RETRAITS.get(r, [r])]
+        table = table.loc[:, ~table.columns.str.fullmatch("|".join(motifs))]
     return table
 
 

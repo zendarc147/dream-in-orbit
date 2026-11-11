@@ -45,8 +45,9 @@ def fente(numero):
 
 
 def kaggle(*args, verifier=True):
-    try:
-        resultat = subprocess.run(["kaggle", *args], capture_output=True, text=True, timeout=600)
+    try:  # le téléchargement des sorties (poids du boosting : plusieurs centaines de Mo) peut dépasser 10 min
+        resultat = subprocess.run(["kaggle", *args], capture_output=True, text=True,
+                                  timeout=3600 if args[:2] == ("kernels", "output") else 600)
     except subprocess.TimeoutExpired:  # appel réseau bloqué : rendre un échec, attendre() réessaie
         resultat = subprocess.CompletedProcess(args, 1, "", "délai dépassé")
     if verifier and resultat.returncode:

@@ -92,7 +92,17 @@ règle) contre 117 (≥ 50, nouvelle) sur annee1 ; 144 contre 142 sur annee2.
 
 ### Reproductibilité sur Kaggle
 
-En cours : `r0_gbm`, boosting installé réentraîné sur Kaggle (fente 1).
+`r0_gbm` : boosting installé réentraîné sur Kaggle (1356 s pour les deux directions en parallèle).
+- Prédictions faites sur Kaggle : directe 0.085825 (égale), inverse 0.082784 au lieu de 0.082774.
+  Le `validation_inverse/` de Kaggle est reconstruit à partir de `y.csv` : la dernière heure,
+  partielle, de power_init diffère, ce qui change le recalage.
+- Mêmes modèles re-prédits en local : écart max 4.4e-16 avec `p2_planning_ema`, mêmes RMSE.
+  **L'entraînement sur Kaggle reproduit le boosting installé.**
+- Protocole retenu : entraînement sur Kaggle, téléchargement des modèles (`"compresser": true` pour
+  limiter la taille), re-prédiction locale (`valider.py --sans-entrainement`, environ 40 s). Les
+  prédictions Kaggle sont gardées dans `pred_kaggle.csv`. Référence du boosting : `p2_planning_ema`.
+- Le téléchargement des pickles non compressés (150 Mo par direction) dépassait les 600 s de
+  `lancer_kaggle.py` : délai porté à 3600 s pour `kernels output`.
 
 ## Expériences du boosting
 
@@ -128,3 +138,30 @@ installé ne change pas) :
   exactement `flux_*_eclaire` divisé par 600 : même découpage, mêmes arbres. Seule nouveauté : la face
   sa− (cos sa < 0), soit 0.2 % des mesures en annee1 et 0.7 % en annee2. Écartée elle aussi par le
   filtre sur annee1. Non lancé seul ; testé dans E22.
+
+### E1 — familles corrigées (point 2)
+
+Hypothèse : regrouper les commandes par `famille_variante` (la seule dernière lettre devient `_`, les
+chiffres restent) au lieu de `commandes.famille` (qui coupe tout après le numéro) distingue des
+familles fusionnées à tort (AOOOF01_0 / AOOOF01_1…) et aide le boosting.
+Modification : `"familles_variante": true` (dmopfam_* et plan_* ; vocabulaire ≥ 50 par période).
+Run `e1_familles`.
+
+| Run | Seul dir. | Seul inv. | Mél. dir. | Mél. inv. | Moy. 4 | Δ | 2551 d/i | 2451 d/i | 2851 d/i |
+|---|---:|---:|---:|---:|---:|---:|---|---|---|
+| référence | 0.085825 | 0.082774 | 0.077872 | 0.081238 | 0.079555 | — | 20.67/12.98 | 14.89/14.51 | 5.91/6.10 |
+| E1 | 0.085395 | 0.083265 | 0.077776 | 0.081419 | 0.079598 | +0.000043 | 20.64/12.98 | 14.92/14.51 | 5.91/6.10 |
+
+GBM seul, plus forts changements de contribution (×1e-4) : directe 2561 −0.77, 2551 −0.41,
+2451 +0.37 ; inverse 2561 +0.60, 2881 +0.20. Les trois circuits suivis bougent à peine.
+
+**Décision : rejet.** Le gain en directe est compensé par une perte en inverse, et le mélange ne baisse
+pas. Résultat reproduit (une seule graine du boosting, déterministe). La correction reste disponible
+et sera retestée dans la recette complète (E22) et avec le retrait des comptes par lettre (E2b).
+
+### Vague B (E2–E6), depuis l'état accepté
+
+Lancée sur Kaggle. Incident : dans la première soumission, l'expression `retirer` d'E2a et E2b avait
+été échappée deux fois dans le JSON (`\\\\w`) et ne retirait rien. Ces deux runs sont donc des doublons
+de la référence et d'E1 : ils sont ignorés, et E2 est relancé avec `\\w` (vérifié : 10 colonnes retirées).
+E3 à E6 ne sont pas touchés.

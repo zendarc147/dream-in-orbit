@@ -132,7 +132,7 @@ class TestPlanning(unittest.TestCase):
         a = gbm_sacs.construire(x, dmop, "V2", [])
         b = gbm_sacs.construire(x, dmop, "V2", [], sans_horloge=True)
         self.assertEqual(sorted(set(a.columns) - set(b.columns)), sorted(gbm_sacs.HORLOGE))
-        c = gbm_sacs.construire(x, dmop, "V2", [], retirer=gbm_sacs.LETTRES)
+        c = gbm_sacs.construire(x, dmop, "V2", [], retirer=["lettres"])
         codes = donnees.charger_schema()["dmop_codes"]
         self.assertEqual(sorted(set(a.columns) - set(c.columns)), sorted(f"dmop_{k}_count" for k in codes))
 
