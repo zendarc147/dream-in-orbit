@@ -26,7 +26,7 @@ import pandas as pd
 from baselines import gbm_sacs, marqueurs
 from . import donnees, mixte, recette
 
-POIDS_GBM = 0.3
+POIDS_GBM = 0.5  # 0.3 jusqu'au 12 nov. ; 0.5 avec le boosting recette (docs/JOURNAL_RECETTE.md)
 PART_RECETTE = 0.3  # part du GRU recette dans la part GRU
 # Recette R (docs/JOURNAL_RECETTE.md, E22b) : options de baselines/gbm_sacs.entrainer.
 GBM_DEFAUT = {"config": "D", "jeu": "V2", "compresser": True, "familles_variante": True, "plan": {"changements": True, "recence": "debut", "prefixes": True, "paires": "liste"}, "contexte": {"soleil": "interpole", "ltdata": "lineaire"}, "ajouts": ["planning", "ema", "geometrie", "altitude", "ombres", "contacts", "decalages", "histoires", "face_sa_moins"], "embargo_h": 0, "filtre": False, "retirer": ["lettres", "distance_terre", "ema"]}

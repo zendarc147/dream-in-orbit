@@ -458,3 +458,33 @@ Référence : `e22b_recette_sans_ema` (0.078891). « Δ » : effet du **retrait*
 
 GBM seul : 0.085825 / 0.082774 → 0.077775 / 0.080954. Il bat maintenant le GRU seul dans les deux
 directions (0.079062 / 0.083579).
+
+## Poids du GBM 0.4–0.5 (demande de l'utilisateur, 12 nov.)
+
+Hypothèse : le GBM seul bat maintenant le GRU seul. Le poids 0.3, fixé avec l'ancien GBM, sous-utilise
+peut-être le nouveau. Expérience séparée ; seule la valeur du poids change (GRU mixte, GRU recette à
+0.3 dans la part GRU, GBM R).
+
+Sans spécialistes (hors ligne, 4 RMSE) :
+
+| Poids GBM | Directe | Inverse | Moy. 4 | Δ | Moitiés de période |
+|---|---:|---:|---:|---:|---|
+| 0.3 | 0.07600 | 0.08059 | 0.07830 | — | référence |
+| 0.4 | 0.07573 | 0.08019 | 0.07796 | −0.00034 | 8/8 en baisse |
+| **0.5** | **0.07563** | **0.07994** | **0.07778** | **−0.00052** | 8/8 en baisse |
+| 0.6 | 0.07570 | 0.07984 | 0.07777 | −0.00053 | la directe remonte |
+
+Avec spécialistes (`predict.py` → `evaluate.py`, `runs/int_val_*_sp`) :
+
+| Poids GBM | Graines 0–4 dir. / inv. | Graines 5–9 dir. / inv. | Moyenne |
+|---|---|---|---:|
+| 0.3 | 0.075344 / 0.078703 | 0.075226 / 0.078900 | 0.077043 |
+| 0.4 | 0.075179 / 0.078582 | 0.075088 / 0.078740 | 0.076897 |
+| **0.5** | **0.075155 / 0.078585** | **0.075087 / 0.078708** | **0.076884** |
+
+**Décision : poids 0.5 installé.** Règle (a) remplie sans spécialistes, et les 4 RMSE baissent avec
+spécialistes (−0.00016 : la porte de NPWD2531 et le spécialiste de NPWD2532 prenaient déjà une partie
+du gain). 0.6 n'apporte rien de plus (plateau, directe en hausse). 0.5 laisse aussi la moitié du mélange
+aux réseaux de neurones (0.35 GRU mixte + 0.15 GRU recette), la borne que le projet s'était fixée.
+Limite : le poids est choisi sur les deux validations elles-mêmes, ce qui laisse un léger optimisme.
+L'ancien test du passage de 0.3 à 0.5 (dégradation) portait sur l'ancien GBM, plus faible que le GRU.

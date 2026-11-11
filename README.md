@@ -21,7 +21,8 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + familles de commandes dmop en entrée du GRU + correction de niveau × 1.5 à la prédiction | 0.0791 | 0.0836 | 0.0813 |
 | + mélange avec un boosting à sacs temporels enrichi (commandes planifiées, moyennes exponentielles), poids 0.3 | 0.0780 | 0.0810 | 0.0795 |
 | + spécialistes : porte de régime par marqueurs pour NPWD2531, boosting + GRU physique pour NPWD2532 | 0.0767 | 0.0791 | 0.0779 |
-| **+ boosting « recette » (familles corrigées, événements de commande, géométrie exacte, décalages, réglage avec arrêt anticipé) et GRU recette à 0.3 dans la part GRU, modèle final** | **0.0753** | **0.0787** | **0.0770** |
+| + boosting « recette » (familles corrigées, événements de commande, géométrie exacte, décalages, réglage avec arrêt anticipé) et GRU recette à 0.3 dans la part GRU | 0.0753 | 0.0787 | 0.0770 |
+| **+ poids du boosting 0.5 au lieu de 0.3, modèle final** | **0.0752** | **0.0786** | **0.0769** |
 
 Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
 Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
@@ -31,7 +32,7 @@ corrige une correction apprise trop faible. Graines 5–9 : 0.0787 / 0.0843. Gai
 directions et sur plusieurs circuits ; NPWD2532 se dégrade. Détail, critères et limites dans
 `docs/RESULTATS.md`, section « Généralisation d'une année à l'autre ».
 
-Le modèle final est un ensemble : 0.7 × world model GRU + 0.3 × boosting à sacs temporels
+Le modèle du 11 novembre était un ensemble : 0.7 × world model GRU + 0.3 × boosting à sacs temporels (depuis le 12 novembre : 0.5 × GRU, dont 30 % de GRU recette, + 0.5 × boosting recette)
 (un HistGradientBoosting par circuit, 5 sacs). Le boosting, sans mémoire, reçoit en plus des
 variables du GRU les commandes planifiées par famille (heures depuis la dernière, comptes dans
 l'heure et les six heures suivantes, périodes début/fin appariées) et des moyennes
@@ -51,7 +52,8 @@ Recette du 12 novembre (`docs/JOURNAL_RECETTE.md`) : le boosting change de varia
 (familles de commandes sans lettre de variante, changements de variante, préfixes, péricentres aux instants
 exacts, décalages ±1–3 h, moyenne des cosinus solaires, réglage avec arrêt anticipé, embargo nul). Seul, il passe
 de 0.0858 / 0.0828 à 0.0778 / 0.0810 et bat le GRU seul. Un second GRU, plus petit et sans retour des sorties
-(`dio/recette.py`), prend 30 % de la part GRU. Graines 5–9 : 0.0752 / 0.0789.
+(`dio/recette.py`), prend 30 % de la part GRU. Le boosting passe ensuite de 0.3 à 0.5 du mélange.
+Graines 5–9 : 0.0751 / 0.0787.
 
 Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
