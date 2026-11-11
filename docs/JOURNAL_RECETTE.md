@@ -351,3 +351,24 @@ Prédictions refaites en local.
   0.7 × (0.7 GRU actuel + 0.3 G2) + 0.3 R) : 0.07886 → 0.07827, les deux directions baissent
   (0.0768 → 0.0760, 0.0809 → 0.0805). Poids choisi sur la validation, un seul groupe de graines :
   G2 graines 5–9 lancé pour vérifier sur les 4 RMSE.
+
+### Diversité GRU actuel + G2 (confirmée)
+
+G2 graines 5–9 (sans réinjection, recalage à la prédiction) : 0.081255 / 0.084212. Mélange
+`0.7 × ((1 − a) × GRU actuel + a × G2 recalé) + 0.3 × GBM`, chaque groupe de graines du GRU actuel
+apparié au groupe de G2 de mêmes graines :
+
+| a (part de G2 dans la part GRU) | 0 | 0.1 | 0.2 | **0.3** | 0.4 | 0.5 |
+|---|---:|---:|---:|---:|---:|---:|
+| avec GBM installé, moy. 4 | 0.07956 | 0.07926 | 0.07903 | 0.07888 | 0.07881 | 0.07881 |
+| avec GBM R, moy. 4 | 0.07889 | 0.07862 | 0.07842 | **0.07830** | 0.07825 | 0.07828 |
+| GBM R, directe (graines 0–4 / 5–9) | 0.07680 / 0.07655 | | | 0.07602 / 0.07599 | | |
+| GBM R, inverse (graines 0–4 / 5–9) | 0.08092 / 0.08129 | | | 0.08052 / 0.08065 | | |
+
+a = 0.3 a été fixé sur les graines 0–4, avant le calcul des graines 5–9, qui confirment le gain :
+les 4 RMSE baissent. **Gardé (règle a) : −0.00059 sur le mélange avec R.** Total depuis la
+référence : 0.079555 → 0.07830 (−0.00126). Le poids 0.3 du GBM reste inchangé. a = 0.4 n'apporte
+que −0.00005 de plus : non retenu (décision prise avant mesure, plateau).
+
+Installation à faire : G2 entraîné sur annee1 + annee2 (lancé sur Kaggle T4, `runs/final_recette_g2`),
+intégré à `dio/ensemble.py` comme troisième composant, puis revalidation des spécialistes.
