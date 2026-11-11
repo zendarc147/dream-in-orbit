@@ -28,6 +28,13 @@ def famille(code):
     return m.group(1) if m else code
 
 
+def famille_variante(code):
+    """Famille sans la lettre de variante : la dernière lettre après les 4 premiers caractères devient _,
+    les chiffres qui la suivent restent. AAAAF23G1 -> AAAAF23_1, AOOOF01D0 -> AOOOF01_0, AACFE03A -> AACFE03_ ;
+    un code sans lettre après le 4e caractère (MOCS.0000002776, ASEQ4200) ne change pas."""
+    return code[:4] + re.sub(r"[A-Z](\d*)$", r"_\1", code[4:])
+
+
 def _heure(temps, debut, n):
     """Indice d'heure de chaque instant sur une grille horaire commençant à debut."""
     i = (np.asarray(temps, dtype=np.int64) - debut) // H

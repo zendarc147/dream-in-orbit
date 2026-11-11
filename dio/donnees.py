@@ -65,6 +65,7 @@ def lire_dossier_test(test_dir, schema=None):
         "n_init": len(y_init),
         "heures_a_predire": a_predire.to_numpy(),
         "dmop": tables["dmop"],
+        "tables": tables,
     }
 
 
@@ -74,6 +75,11 @@ def lire_dmop(annee):
     if table.columns.tolist() != prepare.COLONNES["dmop"]:
         raise ValueError(f"{annee}/dmop.csv : colonnes inattendues")
     return table
+
+
+def lire_contextes(annee):
+    """Les cinq contextes bruts d'une période du kit (dmop, ftl, evtf, saaf, ltdata)."""
+    return prepare.lire_contextes(RACINE / "data" / annee)
 
 
 def ecrire_predictions(heures, valeurs, heures_a_predire, circuits, out):

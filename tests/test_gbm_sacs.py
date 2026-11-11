@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from baselines import gbm_sacs
-from dio import donnees, variables
+from dio import commandes, donnees, variables
 
 H = donnees.H
 RACINE = Path(__file__).resolve().parent.parent
@@ -40,6 +40,62 @@ class TestSacs(unittest.TestCase):
         comptes = variables.comptes_familles(test, np.arange(3) * H, familles)
         self.assertEqual(comptes.columns.tolist(), ["dmopfam_ATTTF321_count"])
         np.testing.assert_array_equal(comptes.iloc[:, 0], [1, 0, 1])
+
+
+class TestFamillesVariante(unittest.TestCase):
+    def test_exemples(self):
+        attendus = {"AAAAF23G1": "AAAAF23_1", "AAAAF23A2": "AAAAF23_2", "AOOOF01D0": "AOOOF01_0",
+                    "AOOOF01D1": "AOOOF01_1", "AACFE03A": "AACFE03_"}
+        for code, famille in attendus.items():
+            self.assertEqual(commandes.famille_variante(code), famille)
+        # Seule la dernière lettre change : pas de suppression de toutes les lettres ni des suffixes.
+        for code in ("MOCS.0000002776", "ASEQ4200", "AAAA"):
+            self.assertEqual(commandes.famille_variante(code), code)
+        self.assertEqual(commandes.famille_variante("ATTTF321A"), "ATTTF321_")
+
+    def test_vocabulaire_par_periode_et_union(self):
+        a = table(*[(i * H, "AOOOF01D0") for i in range(50)], *[(i * H, "AOOOF01D1") for i in range(49)])
+        b = table(*[(i * H, "AOOOF01A1") for i in range(30)], *[(i * H, "AOOOF01B1") for i in range(20)])
+        self.assertEqual(variables.apprendre_familles([a], variante=True), ["AOOOF01_0"])
+        self.assertEqual(variables.apprendre_familles([a, b], variante=True), ["AOOOF01_0", "AOOOF01_1"])
+        comptes = variables.comptes_familles(table((0, "AOOOF01C0"), (H, "AOOOF01D1")), np.arange(2) * H,
+                                             ["AOOOF01_0"], variante=True)
+        np.testing.assert_array_equal(comptes["dmopfam_AOOOF01_0_count"], [1, 0])
+        planning = gbm_sacs.apprendre_planning([a, table(*[(i * H, f"MOCS.{i:010d}") for i in range(50)])], True)
+        self.assertEqual(planning["familles"], ["AOOOF01_0", "MOCS"])
+
+
+class TestEvenementsCommandes(unittest.TestCase):
+    def test_changements_de_variante_sans_identite(self):
+        # A, A, C, C, B aux heures 0, 1, 3, 4, 8 : changements A→C à 3 h et C→B à 8 h.
+        dmop = table((0, "AAAAF20A1"), (H, "AAAAF20A1"), (3 * H, "AAAAF20C1"), (4 * H, "AAAAF20C1"),
+                     (8 * H, "AAAAF20B1"), (5 * H, "AXXX301A"))
+        depuis, jusqua = gbm_sacs.changements_variante(dmop.sort_values("ut_ms"), np.arange(10) * H, "AAAAF20_1", True)
+        plafond = np.log1p(720)
+        np.testing.assert_allclose(depuis, [plafond] * 4 + list(np.log1p([1, 2, 3, 4, 5, 1])))
+        np.testing.assert_allclose(jusqua, list(np.log1p([3, 2, 1, 0, 4, 3, 2, 1, 0])) + [plafond])
+        # Lettre inconnue à l'entraînement (Z) : un changement comme un autre.
+        _, jusqua = gbm_sacs.changements_variante(table((0, "AAAAF20A1"), (2 * H, "AAAAF20Z1")), np.arange(2) * H,
+                                                  "AAAAF20_1", True)
+        np.testing.assert_allclose(jusqua, np.log1p([2, 1]))
+
+    def test_recence_au_debut_de_l_heure(self):
+        temps = np.array([H + H // 2])  # commande à 1 h 30
+        np.testing.assert_allclose(gbm_sacs.heures_depuis(temps, np.arange(4) * H, "debut"),
+                                   np.log1p([720, 720, 0.5, 1.5]))  # l'heure 1 ne voit pas sa propre commande
+        np.testing.assert_allclose(gbm_sacs.heures_depuis(temps, np.arange(4) * H), [168, 0.5, 1.5, 2.5])
+
+    def test_options_du_planning(self):
+        dmop = table(*[(i * H, "AAAAF20A1") for i in range(30)], *[(i * H, "AAAAF20C1") for i in range(30, 60)],
+                     *[(i * H, "ASEQ4200") for i in range(5)]).sort_values("ut_ms")
+        planning = gbm_sacs.apprendre_planning([dmop], True, recence="debut", prefixes=True, changements=True,
+                                               paires="liste")
+        self.assertEqual((planning["familles"], planning["prefixes"], planning["changements"]),
+                         (["AAAAF20_1"], ["AAAA"], ["AAAAF20_1"]))
+        self.assertEqual(planning["paires"], gbm_sacs.PAIRES_LISTE)
+        f = gbm_sacs.variables_planning(dmop, np.arange(70) * H, planning)
+        np.testing.assert_array_equal(f["plan_pre_AAAA_count"][:60], 1)
+        self.assertAlmostEqual(f["plan_AAAAF20_1_jusqua_chgt_h"][0], np.log1p(30))
 
 
 class TestPlanning(unittest.TestCase):
@@ -76,6 +132,9 @@ class TestPlanning(unittest.TestCase):
         a = gbm_sacs.construire(x, dmop, "V2", [])
         b = gbm_sacs.construire(x, dmop, "V2", [], sans_horloge=True)
         self.assertEqual(sorted(set(a.columns) - set(b.columns)), sorted(gbm_sacs.HORLOGE))
+        c = gbm_sacs.construire(x, dmop, "V2", [], retirer=gbm_sacs.LETTRES)
+        codes = donnees.charger_schema()["dmop_codes"]
+        self.assertEqual(sorted(set(a.columns) - set(c.columns)), sorted(f"dmop_{k}_count" for k in codes))
 
 
 class TestDonneesReelles(unittest.TestCase):

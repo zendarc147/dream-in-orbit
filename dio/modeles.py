@@ -9,6 +9,7 @@ MODELES = {
     "gru_mixte": "dio.mixte",
     "gru_gbm": "dio.ensemble",
     "gru_ar": "dio.autoregressif",
+    "gru_recette": "dio.recette",
 }
 FINAL = "gru_gbm"
 

@@ -45,7 +45,7 @@ from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor
 from threadpoolctl import threadpool_limits
 
 from baselines.boosting import recaler
-from dio import commandes, donnees, monde, prepare, variables
+from dio import commandes, contexte as contexte_brut, donnees, monde, prepare, variables
 
 H = donnees.H
 HORLOGE = ["ltdata_sunmars_km", "ltdata_earthmars_km", "ltdata_sunmarsearthangle_deg", "ltdata_solarconstantmars"]
@@ -55,7 +55,15 @@ CONSTANTES_LENTES = (336, 720)
 DEMI_FENETRES_REGIME = (24, 168)
 HARMONIQUES_ORBITE = (2, 3, 4)
 PLAFOND_RECENCE_H = 168
+# Comptes horaires des commandes exactes de prepare.py (lettre de variante comprise, ex. dmop_AAAAF20C1_count).
+LETTRES = [r"dmop_(?!other_count|total_count)\w+_count"]
+AJOUTS_CONTEXTE = {"geometrie", "altitude", "ombres", "contacts"}
+DECALAGES = (-3, -2, -1, 1, 2, 3)
+ORBITE_HORAIRE = ["orbite_pericentre_depuis_h", "orbite_pericentre_jusqua_h", "orbite_phase_cos", "orbite_phase_sin"]
+PLAFOND_LONG_H = 720
 DUREE_MAX_PERIODE = 7 * 24 * H
+PAIRES_LISTE = [("PENS", "PENE"), ("MOCS", "MOCE"), ("PPNS", "PPNE"), ("PDNS", "PDNE"), ("UPBS", "UPBE"),
+                ("UDBS", "UDBE")]
 
 REGLAGES = {
     # A : réglage retenu de la baseline (E1) ; B : le plus gros réglage encore correct d'E1.
@@ -66,23 +74,83 @@ REGLAGES = {
     # C : plus lent et plus régularisé (candidat de la phase 2).
     "C": {"max_iter": 600, "learning_rate": 0.02, "max_leaf_nodes": 15, "min_samples_leaf": 100,
           "l2_regularization": 3.0},
+    # D : C avec l'arrêt anticipé (10 % de validation interne, 10 itérations sans gain) ; chaque circuit
+    # garde entre 10 et 600 arbres (docs/JOURNAL_RECETTE.md, E18).
+    "D": {"max_iter": 600, "learning_rate": 0.02, "max_leaf_nodes": 15, "min_samples_leaf": 100,
+          "l2_regularization": 3.0, "early_stopping": True, "validation_fraction": 0.1, "n_iter_no_change": 10,
+          "tol": 1e-7},
 }
 # ET : arbres extrêmement aléatoires (comparaison de diversité, sans sacs : déjà aléatoires).
 EXTRA_TREES = {"n_estimators": 100, "min_samples_leaf": 50, "max_features": 0.3}
 
-def famille_etendue(code):
-    """Famille d'une commande : lettres de variante fusionnées ; MOCS.0000003738 -> MOCS."""
+def famille_etendue(code, variante=False):
+    """Famille d'une commande : lettres de variante fusionnées ; MOCS.0000003738 -> MOCS.
+    variante : commandes.famille_variante au lieu de commandes.famille (chiffres après la lettre gardés)."""
     m = re.match(r"^([A-Z]{4})\.\d+$", code)
-    return m.group(1) if m else commandes.famille(code)
+    return m.group(1) if m else (commandes.famille_variante if variante else commandes.famille)(code)
 
 
-def apprendre_planning(tables):
-    """Familles vues au moins MIN_FAMILLE fois et paires début/fin (XXXS / XXXE) appariables."""
-    comptes = pd.concat(tables).subsystem.map(famille_etendue).value_counts()
-    familles = sorted(comptes[comptes >= variables.MIN_FAMILLE].index)
-    paires = [(f, f[:3] + "E") for f in familles
-              if re.fullmatch(r"[A-Z]{3}S", f) and f[:3] + "E" in familles]
-    return {"familles": familles, "paires": paires}
+def apprendre_planning(tables, variante=False, recence="fin", prefixes=False, changements=False, paires="apprises"):
+    """Familles vues au moins MIN_FAMILLE fois et paires début/fin (XXXS / XXXE) appariables.
+    variante : familles famille_etendue(variante=True) vues au moins MIN_FAMILLE_VARIANTE fois dans une
+    des périodes, union des périodes. Options (docs/JOURNAL_RECETTE.md) :
+    - recence « debut » : heures depuis la dernière commande au début de l'heure, avant les commandes de
+      l'heure, plafond 720 h, log1p (« fin » : à la fin de l'heure, plafond 168 h) ;
+    - prefixes : comptes horaires et récence par préfixe de 4 caractères (≥ 50 fois dans une période) ;
+    - changements : familles ayant au moins deux variantes vues MIN_FAMILLE fois, pour les heures
+      depuis et jusqu'au changement de variante ;
+    - paires « liste » : périodes début/fin de PAIRES_LISTE au lieu des paires apprises."""
+    options = {"recence": recence} if recence != "fin" else {}
+    if prefixes:
+        comptes = [t.subsystem.str[:4].value_counts() for t in tables]
+        options["prefixes"] = sorted(set().union(*(c[c >= variables.MIN_FAMILLE_VARIANTE].index for c in comptes)))
+    if changements:
+        codes = pd.concat(tables).subsystem.value_counts()
+        frequents = pd.Series(codes[codes >= variables.MIN_FAMILLE].index)
+        par_famille = frequents.groupby(frequents.map(lambda c: famille_etendue(c, variante))).size()
+        options["changements"] = sorted(par_famille[par_famille >= 2].index)
+    if variante:
+        comptes = [t.subsystem.map(lambda c: famille_etendue(c, True)).value_counts() for t in tables]
+        familles = sorted(set().union(*(c[c >= variables.MIN_FAMILLE_VARIANTE].index for c in comptes)))
+    else:
+        comptes = pd.concat(tables).subsystem.map(famille_etendue).value_counts()
+        familles = sorted(comptes[comptes >= variables.MIN_FAMILLE].index)
+    paires = (PAIRES_LISTE if paires == "liste" else
+              [(f, f[:3] + "E") for f in familles if re.fullmatch(r"[A-Z]{3}S", f) and f[:3] + "E" in familles])
+    return {"familles": familles, "paires": paires, **({"variante": True} if variante else {}), **options}
+
+
+def heures_depuis(temps, heures, convention="fin"):
+    """Heures depuis le dernier instant de temps (trié). « fin » : à la fin de l'heure, plafond 168 h ;
+    « debut » : au début de l'heure, avant ses commandes, log1p(min(·, 720)). Jamais vu : plafond."""
+    debut = convention == "debut"
+    reference = heures if debut else heures + H
+    position = np.searchsorted(temps, reference, side="left") - 1
+    sortie = np.full(len(heures), np.inf)
+    vue = position >= 0
+    sortie[vue] = (reference[vue] - temps[position[vue]]) / H
+    return np.log1p(np.minimum(sortie, PLAFOND_LONG_H)) if debut else np.minimum(sortie, PLAFOND_RECENCE_H)
+
+
+def changements_variante(dmop, heures, famille, variante):
+    """log1p(min(heures, 720)) depuis le dernier et jusqu'au prochain changement de variante de la famille,
+    au début de l'heure. Un changement : une commande dont le code diffère de la précédente de la famille
+    (A, A, C, C, B : A→C et C→B) ; une lettre jamais vue à l'entraînement compte aussi. Pas d'identité."""
+    lignes = dmop[dmop.subsystem.map(lambda c: famille_etendue(c, variante)) == famille]
+    codes, temps = lignes.subsystem.to_numpy(), lignes.ut_ms.to_numpy(dtype=np.int64)
+    instants = temps[1:][codes[1:] != codes[:-1]]
+    depuis = heures_depuis(instants, heures, "debut")
+    suivant = np.searchsorted(instants, heures, side="left")
+    jusqua = np.full(len(heures), np.inf)
+    connu = suivant < len(instants)
+    jusqua[connu] = (instants[suivant[connu]] - heures[connu]) / H
+    return depuis, np.log1p(np.minimum(jusqua, PLAFOND_LONG_H))
+
+
+def familles_planning(dmop, planning):
+    """Table dmop dont les codes sont remplacés par leur famille du planning."""
+    variante = planning.get("variante", False)
+    return dmop.assign(subsystem=dmop.subsystem.map(lambda c: famille_etendue(c, variante)))
 
 
 def periodes_actives(dmop, heures, debut, fin):
@@ -101,30 +169,38 @@ def periodes_actives(dmop, heures, debut, fin):
 
 def variables_planning(dmop, heures, planning):
     heures = np.asarray(heures, dtype=np.int64)
-    table = dmop.assign(subsystem=dmop.subsystem.map(famille_etendue))
+    table = familles_planning(dmop, planning)
     familles = planning["familles"]
     comptes = commandes.impulsions(table, heures, familles)
     cumul = np.vstack([np.zeros((1, len(familles))), np.cumsum(comptes, axis=0)])
     t, n = np.arange(len(heures)), len(heures)
     sortie = {}
+    convention = planning.get("recence", "fin")
     for j, f in enumerate(familles):
         temps = np.sort(table.ut_ms[table.subsystem == f].to_numpy(dtype=np.int64))
-        position = np.searchsorted(temps, heures + H, side="left") - 1
-        recence = np.full(n, np.inf)  # famille jamais vue avant l'heure (ou absente du test)
-        vue = position >= 0
-        recence[vue] = (heures[vue] + H - temps[position[vue]]) / H
-        sortie[f"plan_{f}_depuis_h"] = np.minimum(recence, PLAFOND_RECENCE_H)
+        sortie[f"plan_{f}_depuis_h"] = heures_depuis(temps, heures, convention)  # famille jamais vue : plafond
         sortie[f"plan_{f}_futur1h"] = cumul[np.minimum(t + 2, n), j] - cumul[np.minimum(t + 1, n), j]
         sortie[f"plan_{f}_futur6h"] = cumul[np.minimum(t + 7, n), j] - cumul[np.minimum(t + 1, n), j]
     for debut, fin in planning["paires"]:
         sortie[f"plan_{debut}_{fin}_actif"] = periodes_actives(dmop, heures, debut, fin)
+    prefixes = planning.get("prefixes", [])
+    if prefixes:
+        quatre = dmop.assign(subsystem=dmop.subsystem.str[:4])
+        comptes = commandes.impulsions(quatre, heures, prefixes)
+        for j, p in enumerate(prefixes):
+            sortie[f"plan_pre_{p}_count"] = comptes[:, j]
+            temps = np.sort(quatre.ut_ms[quatre.subsystem == p].to_numpy(dtype=np.int64))
+            sortie[f"plan_pre_{p}_depuis_h"] = heures_depuis(temps, heures, convention)
+    for f in planning.get("changements", []):
+        sortie[f"plan_{f}_depuis_chgt_h"], sortie[f"plan_{f}_jusqua_chgt_h"] = changements_variante(
+            dmop, heures, f, planning.get("variante", False))
     return pd.DataFrame(sortie, index=heures)
 
 
 def variables_regimes(dmop, heures, planning):
     """Comptes de chaque famille du planning dans [t - w, t + w] (heures entières)."""
     heures = np.asarray(heures, dtype=np.int64)
-    table = dmop.assign(subsystem=dmop.subsystem.map(famille_etendue))
+    table = familles_planning(dmop, planning)
     comptes = commandes.impulsions(table, heures, planning["familles"])
     cumul = np.vstack([np.zeros((1, comptes.shape[1])), np.cumsum(comptes, axis=0)])
     t, n = np.arange(len(heures)), len(heures)
@@ -143,6 +219,39 @@ def series_contexte(x):
         if c.startswith("ftl_") and c not in ("ftl_coverage_minutes", "ftl_overlap_minutes"):
             series[c] = x[c].to_numpy(dtype=np.float64)
     return series
+
+
+def decalages(x, table):
+    """Valeurs à t−3, t−2, t−1, t+1, t+2, t+3 h (bords répétés) de l'ombre, de la pénombre (fractions
+    d'heure), des quatre cosinus solaires, des communications et des modes EARTH et SLEW."""
+    series = {"ombre_umbra": x["evtf_MAR_UMBRA_minutes"] / 60, "ombre_penumbra": x["evtf_MAR_PENUMBRA_minutes"] / 60,
+              **{f"saaf_{a}_cos": table[f"saaf_{a}_cos"] for a in contexte_brut.ANGLES},
+              "ftl_comms_minutes": x["ftl_comms_minutes"], "ftl_EARTH_minutes": x["ftl_EARTH_minutes"],
+              "ftl_SLEW_minutes": x["ftl_SLEW_minutes"]}
+    n = len(x)
+    sortie = {f"{nom}_dec{d:+d}h": serie.to_numpy(dtype=np.float64)[np.clip(np.arange(n) + d, 0, n - 1)]
+              for nom, serie in series.items() for d in DECALAGES}
+    return pd.DataFrame(sortie, index=x.index)
+
+
+def histoires_ciblees(x):
+    """Ombre (umbra + 0.5 pénombre, fraction d'heure) cumulée sur 7 et 24 h, moyenne sur 168 h, heures
+    depuis la dernière heure d'ombre (log1p, plafond 720 h) ; flux éclairé total moyen sur 6 et 24 h ;
+    communications moyennes sur 24 h. Fenêtres passées, heure courante comprise."""
+    physique = variables.physiques(x)
+    ombre = physique["ombre"].to_numpy()
+    flux = physique[[c for c in physique.columns if c.startswith("flux_") and c.endswith("_eclaire")]].sum(axis=1)
+    comms = x["ftl_comms_minutes"].to_numpy(dtype=np.float64)
+    t = np.arange(len(x), dtype=float)
+    derniere = np.maximum.accumulate(np.where(ombre > 0, t, -np.inf))
+    sortie = {"ombre_cumul7h": variables.sommes_glissantes(ombre, 7)[0] * np.minimum(t + 1, 7),
+              "ombre_cumul24h": variables.sommes_glissantes(ombre, 24)[0] * np.minimum(t + 1, 24),
+              "ombre_moy168h": variables.sommes_glissantes(ombre, 168)[0],
+              "ombre_depuis_h": np.log1p(np.minimum(t - derniere, PLAFOND_LONG_H)),
+              "flux_total_moy6h": variables.sommes_glissantes(flux.to_numpy(), 6)[0],
+              "flux_total_moy24h": variables.sommes_glissantes(flux.to_numpy(), 24)[0],
+              "ftl_comms_moy24h": variables.sommes_glissantes(comms, 24)[0]}
+    return pd.DataFrame(sortie, index=x.index)
 
 
 def historique(x, existantes):
@@ -177,19 +286,53 @@ def orbite(x, table):
     return pd.concat([pd.DataFrame(sortie, index=x.index), lentes], axis=1)
 
 
-def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge=False):
-    """Variables d'une période continue (x : X horaire de prepare.py, dmop : table brute)."""
+def preparer_contexte(x, contextes, contexte):
+    """X de prepare.py modifié par les options de contexte, avant le calcul des variables :
+    - ltdata « lineaire » : valeurs journalières interpolées au milieu de l'heure (au lieu du jour répété) ;
+    - soleil « mesures » : saaf_*_cos = moyenne horaire des cosinus des mesures (au lieu du cosinus de
+      l'angle moyen), saaf_sa_ecart ; heure sans mesure : cosinus de l'angle moyen rempli par prepare.py ;
+    - soleil « interpole » : idem, mais angles, cosinus et écart-type des heures sans mesure interpolés
+      dans le temps (bords : valeur la plus proche) au lieu des valeurs de remplissage de prepare.py."""
+    x = x.copy()
+    if contexte.get("ltdata") == "lineaire":
+        lt = contexte_brut.ltdata_lineaire(contextes["ltdata"], x.index)
+        x[lt.columns] = lt.to_numpy()
+    mode = contexte.get("soleil")
+    if mode:
+        s = contexte_brut.soleil(contextes["saaf"], x.index)
+        if mode == "interpole":
+            s = contexte_brut.interpoler(s)
+            colonnes = list(s.columns)
+        else:
+            for a in contexte_brut.ANGLES:
+                s[f"saaf_{a}_cos"] = s[f"saaf_{a}_cos"].fillna(pd.Series(
+                    np.cos(np.deg2rad(x[f"saaf_{a}_mean"].to_numpy())), index=s.index))
+            s["saaf_sa_ecart"] = s["saaf_sa_ecart"].fillna(0.0)
+            colonnes = [c for c in s.columns if not c.endswith("_mean")]
+        x[colonnes] = s[colonnes].to_numpy()
+    return x
+
+
+def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge=False, variante=False,
+               retirer=(), contextes=None, contexte=None):
+    """Variables d'une période continue (x : X horaire de prepare.py, dmop : table brute).
+    retirer : expressions régulières des colonnes à écarter (ablations de retrait) ; contextes : tables
+    brutes de la période (saaf, ltdata, evtf), lues par les options contexte (preparer_contexte) et les
+    ajouts geometrie (péricentres exacts, remplacent ORBITE_HORAIRE), altitude, ombres et contacts."""
     if jeu == "v1":
         return x.copy()
     if jeu not in ("V1", "V2"):
         raise ValueError(f"Jeu de variables inconnu : {jeu}")
-    inconnus = set(ajouts) - {"planning", "historique", "ema", "orbite", "regimes"}
+    if contexte:
+        x = preparer_contexte(x, contextes, contexte)
+    inconnus = (set(ajouts) - {"planning", "historique", "ema", "orbite", "regimes", "decalages", "histoires"}
+                - AJOUTS_CONTEXTE)
     if inconnus:
         raise ValueError(f"Ajouts inconnus : {sorted(inconnus)}")
     table = variables.ajouter_v2r(x)
     if jeu == "V2":
         table = pd.concat([table, variables.physiques(x),
-                           variables.comptes_familles(dmop, x.index.to_numpy(), familles)], axis=1)
+                           variables.comptes_familles(dmop, x.index.to_numpy(), familles, variante)], axis=1)
     blocs = [table]
     if "planning" in ajouts:
         blocs.append(variables_planning(dmop, x.index.to_numpy(), planning).set_axis(x.index))
@@ -201,9 +344,26 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
         blocs.append(orbite(x, table))
     if "regimes" in ajouts:
         blocs.append(variables_regimes(dmop, x.index.to_numpy(), planning).set_axis(x.index))
+    if {"geometrie", "altitude"} & set(ajouts):
+        geo = contexte_brut.geometrie(contextes["evtf"], x.index.to_numpy()).set_axis(x.index)
+        if "geometrie" in ajouts:
+            blocs[0] = blocs[0].drop(columns=ORBITE_HORAIRE)
+            blocs.append(geo.drop(columns="geo_altitude_km"))
+        if "altitude" in ajouts:
+            blocs.append(geo[["geo_altitude_km"]])
+    if "decalages" in ajouts:
+        blocs.append(decalages(x, blocs[0]))
+    if "histoires" in ajouts:
+        blocs.append(histoires_ciblees(x))
+    if "ombres" in ajouts:
+        blocs.append(contexte_brut.ombres(contextes["evtf"], x.index.to_numpy()).set_axis(x.index))
+    if "contacts" in ajouts:
+        blocs.append(contexte_brut.contacts(contextes["evtf"], x.index.to_numpy()).set_axis(x.index))
     table = pd.concat(blocs, axis=1)
     if sans_horloge:
         table = table.drop(columns=HORLOGE)
+    if retirer:
+        table = table.loc[:, ~table.columns.str.fullmatch("|".join(retirer))]
     return table
 
 
@@ -224,29 +384,35 @@ def _ajuster(f, y, lignes, config, graine, perte="squared_error"):
         if config == "ET":
             modele = ExtraTreesRegressor(**EXTRA_TREES, random_state=graine, n_jobs=1)
         else:
-            modele = HistGradientBoostingRegressor(**REGLAGES[config], loss=perte, early_stopping=False,
+            modele = HistGradientBoostingRegressor(**{"early_stopping": False, **REGLAGES[config]}, loss=perte,
                                                    random_state=graine)
         return modele.fit(f[lignes][connus], y[connus])
 
 
 def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filtre=True, graine=0,
               ajouts=(), sans_horloge=False, compresser=False, circuits=None, lissage_cible=0,
-              perte="squared_error"):
+              perte="squared_error", familles_variante=False, retirer=(), plan=None, contexte=None):
     """compresser : gbm_sacs.pkl.xz (lzma, environ 8 fois plus petit, 2 min de plus à l'écriture).
     circuits : colonnes apprises (toutes par défaut) ; lissage_cible : fenêtre en heures de la moyenne
     centrée appliquée aux cibles de chaque année (0 : cibles horaires brutes) ; perte : « absolute_error »
-    apprend la médiane conditionnelle (un mode rare et inexpliqué ne tire plus le niveau de base)."""
+    apprend la médiane conditionnelle (un mode rare et inexpliqué ne tire plus le niveau de base) ;
+    familles_variante : familles de commandes commandes.famille_variante (≥ 50 fois par période, union) ;
+    retirer : expressions régulières des colonnes écartées (ex. LETTRES) ; plan : options de
+    apprendre_planning (recence, prefixes, changements, paires) ; contexte : options de preparer_contexte."""
     schema = donnees.charger_schema()
     noms = list(circuits or schema["target_columns"])
     indices = [schema["target_columns"].index(c) for c in noms]
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
-    familles = variables.apprendre_familles(list(tables.values())) if jeu == "V2" else []
-    planning = apprendre_planning(list(tables.values())) if {"planning", "regimes"} & set(ajouts) else None
+    familles = variables.apprendre_familles(list(tables.values()), familles_variante) if jeu == "V2" else []
+    planning = (apprendre_planning(list(tables.values()), familles_variante, **(plan or {}))
+                if {"planning", "regimes"} & set(ajouts) else None)
     heures, blocs, ys = [], [], []
     for annee in annees:
         h, x, y = donnees.charger_annee(annee, schema)
         heures.append(h)
-        blocs.append(construire(x, tables[annee], jeu, familles, ajouts, planning, sans_horloge))
+        contextes = donnees.lire_contextes(annee) if contexte or AJOUTS_CONTEXTE & set(ajouts) else None
+        blocs.append(construire(x, tables[annee], jeu, familles, ajouts, planning, sans_horloge, familles_variante,
+                                retirer, contextes, contexte))
         y = pd.DataFrame(y[:, indices])
         if lissage_cible:
             y = y.rolling(lissage_cible, center=True, min_periods=1).mean().where(y.notna())
@@ -274,7 +440,7 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
     with (lzma.open(dossier / "gbm_sacs.pkl.xz", "wb") if compresser else open(dossier / "gbm_sacs.pkl", "wb")) as fichier:
         pickle.dump({"config": config, "jeu": jeu, "colonnes": colonnes, "familles": familles,
                      "ajouts": list(ajouts), "planning": planning, "sans_horloge": sans_horloge,
-                     "circuits": noms, "lissage_cible": lissage_cible, "perte": perte, "annees": list(annees), "modeles": modeles}, fichier)
+                     "circuits": noms, "lissage_cible": lissage_cible, "familles_variante": familles_variante, "retirer": list(retirer), "contexte": contexte, "perte": perte, "annees": list(annees), "modeles": modeles}, fichier)
     print(f"{len(modeles)} sac(s) × {n_circuits} boostings ({config}, {jeu}, {len(colonnes)} variables)"
           f" entraînés sur {', '.join(annees)}")
 
@@ -285,7 +451,8 @@ def predire(test_dir, out, dossier, recalage=1.0, demi_vie=1440):
         paquet = pickle.load(fichier)
     test = donnees.lire_dossier_test(test_dir)
     table = construire(test["X"], test["dmop"], paquet["jeu"], paquet["familles"], paquet.get("ajouts", ()),
-                       paquet.get("planning"), paquet.get("sans_horloge", False))
+                       paquet.get("planning"), paquet.get("sans_horloge", False), paquet.get("familles_variante", False),
+                       paquet.get("retirer", ()), test["tables"], paquet.get("contexte"))
     f = table[paquet["colonnes"]].to_numpy(dtype=np.float64)
     prediction = np.mean([[m.predict(f) for m in sac] for sac in paquet["modeles"]], axis=0).T
     indices = [donnees.charger_schema()["target_columns"].index(c) for c in paquet["circuits"]]
