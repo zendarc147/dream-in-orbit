@@ -431,3 +431,7 @@ python outils/lancer_kaggle.py --recuperer poids -- train.py
 python predict.py --test_dir DOSSIER --out predictions.csv
 python predict.py --test_dir DOSSIER --out predictions.csv --options '{"poids_gbm": 0}'
 ```
+
+**Mise à jour 11 h 30.** AR graines 0–4 (session CPU Kaggle, 2 h 20 sans fin) abandonné à la
+demande de l'utilisateur : rapatriement arrêté, sorties ignorées. Le rejet de l'AR repose donc sur
+un seul groupe de graines (5–9), avec un écart de +0.006 et aucun apport en mélange.
