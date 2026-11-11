@@ -289,3 +289,37 @@ Entraînement Kaggle CPU : 3779 s pour les deux directions en parallèle, par va
 **Nouvel état accepté (R)** : options de `e22b_recette_sans_ema`, recalage conservé, poids 0.3.
 Prochaine étape : ablations depuis R, un ingrédient retiré à la fois, pour mesurer la contribution de
 chaque famille.
+
+### Vague C — essais isolés depuis l'état E3 (avant E22)
+
+Lancés avant le résultat d'E22. Chaque variante change une seule chose par rapport à l'état E3
+(boosting B_V2 + planning + EMA + changements de variante). Ils mesurent l'effet de chaque ingrédient
+seul. L'état accepté est désormais la recette R : ces décisions servent de diagnostic, sans
+changer l'état. Prédictions refaites en local. Référence : `e3_changements` (0.079503).
+
+| Run | Seul dir. | Seul inv. | Mél. dir. | Mél. inv. | Moy. 4 | Δ | 2551 d/i | 2451 d/i | 2851 d/i | Règle |
+|---|---:|---:|---:|---:|---:|---:|---|---|---|---|
+| E2a sans comptes par lettre | 0.085600 | 0.082518 | 0.077794 | 0.081212 | 0.079503 | +0.000001 | 20.60/12.90 | 14.88/14.48 | 5.97/6.11 | rejet |
+| E2b E2a + familles corrigées | 0.085398 | 0.082851 | 0.077757 | 0.081324 | 0.079541 | +0.000038 | 20.57/12.87 | 14.95/14.50 | 6.02/6.12 | rejet |
+| E7 soleil « mesures » | 0.085250 | 0.082211 | 0.077770 | 0.081192 | 0.079481 | −0.000022 | 20.59/12.80 | 14.83/14.49 | 5.93/6.10 | (b) |
+| E8 soleil « interpole » | 0.085270 | 0.082465 | 0.077767 | 0.081290 | 0.079528 | +0.000026 | 20.59/12.83 | 14.83/14.51 | 5.93/6.12 | (b) |
+| E9 ltdata linéaire | 0.085814 | 0.082251 | 0.077847 | 0.081150 | 0.079499 | −0.000004 | 20.64/12.84 | 14.85/14.48 | 6.01/6.09 | rejet |
+| E10 péricentres exacts | 0.085179 | 0.082312 | 0.077753 | 0.081157 | 0.079455 | −0.000048 | 20.54/12.82 | 14.91/14.50 | 5.92/6.09 | (b) |
+| E11 altitude | 0.085674 | 0.082682 | 0.077827 | 0.081243 | 0.079535 | +0.000033 | 20.58/12.90 | 14.89/14.52 | 6.00/6.11 | rejet |
+| E13 contacts | 0.085566 | 0.082552 | 0.077784 | 0.081221 | 0.079502 | −0.000000 | 20.59/12.89 | 14.86/14.52 | 5.98/6.12 | rejet |
+| E14 décalages ±1–3 h | 0.082823 | 0.082638 | 0.077371 | 0.081497 | 0.079434 | −0.000068 | 20.27/12.83 | 14.65/14.60 | 5.96/6.15 | rejet (inverse) |
+| E15 historiques ciblés | 0.086221 | 0.082057 | 0.078106 | 0.081106 | 0.079606 | +0.000103 | 20.72/12.82 | 15.17/14.42 | 6.01/6.11 | rejet |
+| E15b sans EMA | 0.088295 | 0.082700 | 0.078177 | 0.081558 | 0.079868 | +0.000365 | 20.80/12.49 | 14.85/14.53 | 6.30/6.09 | rejet |
+| E17 sans distance Terre ni angle SMT | 0.084416 | 0.082429 | 0.077685 | 0.081126 | 0.079405 | −0.000097 | 20.59/12.88 | 14.87/14.52 | 5.87/6.10 | (b) |
+| E18 réglage D (arrêt anticipé) | 0.087136 | 0.082173 | 0.078086 | 0.081080 | 0.079583 | +0.000080 | 20.70/12.90 | 14.83/14.48 | 5.94/6.09 | rejet |
+| E19 embargo 0 | 0.088731 | 0.082495 | 0.078548 | 0.081138 | 0.079843 | +0.000341 | 20.53/12.81 | 14.91/14.55 | 6.25/6.10 | rejet |
+| E20 sans filtre de fréquence | 0.085599 | 0.082514 | 0.077794 | 0.081212 | 0.079503 | +0.000000 | 20.60/12.90 | 14.88/14.48 | 5.97/6.11 | rejet |
+
+Lecture :
+- Les 10 comptes exacts avec lettre ne servent à rien au boosting (E2a, prédictions presque identiques).
+- Isolés, le réglage D, l'embargo 0 et le retrait des EMA dégradent nettement. Pourtant, réunis aux
+  autres ingrédients (E22b), ils font partie de la meilleure version : effets d'interaction, à
+  démêler par les ablations depuis R.
+- E14 (décalages) donne le plus gros gain isolé du GBM seul en directe (−0.0028), mais l'inverse
+  perd. E17 est le seul retrait utile (−0.0012 en directe seule).
+- E20 : prédictions identiques. Dans cet état, aucune colonne n'était écartée par le filtre.
