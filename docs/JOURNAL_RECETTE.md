@@ -323,3 +323,31 @@ Lecture :
 - E14 (décalages) donne le plus gros gain isolé du GBM seul en directe (−0.0028), mais l'inverse
   perd. E17 est le seul retrait utile (−0.0012 en directe seule).
 - E20 : prédictions identiques. Dans cet état, aucune colonne n'était écartée par le filtre.
+
+## Recette GRU (point 9)
+
+Module `dio/recette.py` (modèle `gru_recette`), entraîné sur Kaggle T4 : environ 10 min pour les deux
+directions en parallèle, 5 graines, 80 époques. Entrées : 261 variables (v2r + 117 familles corrigées,
+sans comptes par lettre). RMSE d'entraînement en fin de parcours : 0.054 à 0.059 en simulation libre.
+Prédictions refaites en local.
+
+| GRU (graines 0–4) | Directe | Inverse | 0–30 j / 30–180 j / > 180 j (inverse) | Mélange 0.3 avec R |
+|---|---:|---:|---|---:|
+| GRU actuel (`p1_gru_g04`) | 0.079062 | 0.083579 | 0.071 / 0.098 / 0.079 | 0.07886 |
+| G1 recette, réinjection | 0.085289 | 0.106174 | 0.126 / 0.115 / 0.102 | 0.08714 |
+| G1 + recalage power_init (prédiction) | 0.085442 | 0.099579 | | 0.08496 |
+| G2 sans réinjection | 0.081458 | 0.092440 | 0.125 / 0.113 / 0.083 | 0.08203 |
+| G2 sans réinjection + recalage | 0.081383 | 0.084537 | | 0.07957 |
+
+- **Réinjection : nuisible** (G1 contre G2 : +0.004 en directe, +0.014 en inverse), dans le même
+  sens que l'ablation donnée par l'utilisateur.
+- L'erreur de l'inverse vient du début de période, et surtout de NPWD2531 (contribution 33.9e-4 contre 11.0e-4
+  pour le GRU actuel). La recette n'a pas de correction de niveau tirée de power_init. L'option
+  `recalage` de `predire` (même règle que le boosting : écart moyen entre power_init et la simulation
+  libre sur ces heures, demi-vie 1440 h) réduit l'erreur, sans rattraper le GRU actuel.
+- **Décision : recette GRU rejetée comme remplaçant du GRU actuel.** Résultat reproduit pour les
+  graines 0–4 seulement (G1 graines 5–9 en cours, pour la trace).
+- **Hypothèse non confirmée** : diversité. Avec 0.3 × G2 recalé dans la part GRU (mélange
+  0.7 × (0.7 GRU actuel + 0.3 G2) + 0.3 R) : 0.07886 → 0.07827, les deux directions baissent
+  (0.0768 → 0.0760, 0.0809 → 0.0805). Poids choisi sur la validation, un seul groupe de graines :
+  G2 graines 5–9 lancé pour vérifier sur les 4 RMSE.

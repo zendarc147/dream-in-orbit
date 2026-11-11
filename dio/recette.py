@@ -27,6 +27,7 @@ import pandas as pd
 import torch
 from torch import nn
 
+from baselines.boosting import recaler
 from . import donnees, variables
 
 CONFIG_DEFAUT = {
@@ -196,7 +197,10 @@ def entrainer(annees, dossier, **options):
 
 
 @torch.no_grad()
-def predire(test_dir, out, dossier):
+def predire(test_dir, out, dossier, recalage=0.0, demi_vie=1440):
+    """recalage : comme le boosting (baselines.boosting.recaler), décalage de chaque circuit d'une fraction
+    de l'écart moyen entre power_init et la simulation libre du modèle sur ces mêmes heures, atténué avec
+    une demi-vie en heures. 0 : recette telle quelle."""
     paquet = torch.load(Path(dossier) / "recette.pt", weights_only=True)
     config, stats = paquet["config"], {k: v.numpy() for k, v in paquet["stats"].items()}
     test = donnees.lire_dossier_test(test_dir)
@@ -215,7 +219,13 @@ def predire(test_dir, out, dossier):
         h, precedent = torch.zeros(1, config["taille"]), torch.zeros(1, len(paquet["circuits"]))
         _, h, precedent = modele.avancer(x[:, :n_init], h, precedent, verite, 1.0)  # 7 jours réels réinjectés
         sortie, _, _ = modele.avancer(x[:, n_init:], h, precedent)
-        sorties.append(sortie[0].numpy() * stats["y_ecart"] + stats["y_moyenne"])
+        sortie = sortie[0].numpy() * stats["y_ecart"] + stats["y_moyenne"]
+        if recalage:
+            libre, _, _ = modele.avancer(x[:, :n_init], torch.zeros(1, config["taille"]),
+                                         torch.zeros(1, len(paquet["circuits"])))
+            libre = libre[0].numpy() * stats["y_ecart"] + stats["y_moyenne"]
+            sortie = recaler(np.concatenate([libre, sortie]), test["y_init"], n_init, recalage, demi_vie)[n_init:]
+        sorties.append(sortie)
     debut = np.where(np.isfinite(test["y_init"][:n_init]), test["y_init"][:n_init], stats["y_moyenne"])
     moyenne = np.clip(np.concatenate([debut, np.mean(sorties, axis=0)]), 0, None)
     return donnees.ecrire_predictions(test["heures"], moyenne, test["heures_a_predire"], paquet["circuits"], out)
