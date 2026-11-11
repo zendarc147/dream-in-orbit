@@ -11,7 +11,7 @@ sont pas reportés ici ; seules les mesures du dépôt le sont.
 
 - Branche : `recette`.
 - État accepté du boosting (options de `gbm_sacs.entrainer`) :
-  `{"config": "B", "jeu": "V2", "ajouts": ["planning", "ema"], "plan": {"changements": true}}` (E3 gardé).
+  options de `runs/e22b_recette_sans_ema/directe/modele.json` (recette R, E22b gardé ; référence de comparaison : `e22b_recette_sans_ema`).
 - Référence du boosting pour `outils/comparer_recette.py` : `ref_gbm` (voir phase 0).
 - Prochaine étape : voir la dernière section.
 - Runs Kaggle en cours : aucun (sinon `python outils/lancer_kaggle.py --fente N --rapatrier`).
@@ -261,3 +261,31 @@ Résultats E3–E6 (prédictions refaites en local à partir des modèles Kaggle
 Incident d'attente : la boucle `while pgrep -f "lancer_kaggle.py --fente"` se trouvait elle-même
 (le motif figure dans sa propre ligne de commande) et ne s'arrêtait jamais. Les runs étaient finis
 depuis plusieurs minutes. Attente désormais sur le PID du lanceur.
+
+### E22 — résultats (prédictions refaites en local)
+
+Entraînement Kaggle CPU : 3779 s pour les deux directions en parallèle, par variante (réglage D).
+
+| Run | Seul dir. | Seul inv. | Mél. dir. | Mél. inv. | Moy. 4 | Δ | 2551 d/i | 2451 d/i | 2851 d/i | Décision |
+|---|---:|---:|---:|---:|---:|---:|---|---|---|---|
+| référence | 0.085825 | 0.082774 | 0.077872 | 0.081238 | 0.079555 | — | 20.67/12.98 | 14.89/14.51 | 5.91/6.10 | — |
+| E22a recette, EMA gardées | 0.082144 | 0.082203 | 0.077341 | 0.081267 | 0.079304 | −0.000251 | 20.58/12.75 | 14.76/14.61 | 5.93/6.10 | (b) |
+| **E22b recette sans EMA** | **0.077775** | **0.080954** | **0.076677** | **0.081105** | **0.078891** | **−0.000664** | 20.39/12.59 | 14.68/14.44 | 5.81/6.03 | **garder (a)** |
+| E22a sans recalage | 0.082944 | 0.090313 | 0.077488 | 0.083272 | 0.080380 | +0.000825 | | | | rejet |
+| E22b sans recalage | 0.077891 | 0.089218 | 0.076715 | 0.083104 | 0.079909 | +0.000354 | | | | rejet |
+
+- Les ingrédients ne servent qu'ensemble : seul, chacun gagne au plus 0.00008 (E3–E6), mais réunis
+  ils font −0.00066 sur le mélange. Le GBM seul passe de 0.0858 à 0.0778 en directe (−0.0080) et de
+  0.0828 à 0.0810 en inverse.
+- Les EMA nuisent dans la recette (E22a contre E22b : +0.0044 en directe seule). Elles avaient aidé
+  le boosting B_V2 : leur effet dépend du reste des variables.
+- Le recalage sur power_init reste nécessaire : sans lui, l'inverse seul perd environ 0.008.
+- GBM seul, contributions MSE (×1e-4) : directe 2551 −7.11, 2451 −1.98, 2561 −1.62, 2531 −0.81 ;
+  inverse 2451 −0.99, 2551 −0.94, 2532 +0.70. Dans le mélange, la directe gagne sur 2561, 2531,
+  2551 et 2451 ; l'inverse perd sur 2532 (+0.74), que le spécialiste 0.6 × GBM traite à part.
+- Arrêt anticipé (réglage D) : médiane de 10 itérations par circuit (circuits presque constants),
+  600 pour 2551, 2531 et 2532, 449 pour 2451, 566 pour 2851.
+
+**Nouvel état accepté (R)** : options de `e22b_recette_sans_ema`, recalage conservé, poids 0.3.
+Prochaine étape : ablations depuis R, un ingrédient retiré à la fois, pour mesurer la contribution de
+chaque famille.
