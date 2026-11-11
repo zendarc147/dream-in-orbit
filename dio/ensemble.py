@@ -11,6 +11,9 @@ Spécialistes de deux circuits (docs/JOURNAL_SPECIALISTES.md), dans specialiste/
 - NPWD2531 : hors des marqueurs de régime du planning, niveau médian recalé sur power_init au lieu
   de l'ensemble (baselines/marqueurs.py, specialiste/marqueurs.json).
 Les 31 autres colonnes ne changent pas. Retour à l'ensemble seul : --options '{"specialistes": false}'.
+
+GRU recette (dio/recette.py, sans réinjection, recalé sur power_init), dans recette/ si part_recette > 0 :
+la part GRU devient (1 - part_recette) × GRU mixte + part_recette × GRU recette (docs/JOURNAL_RECETTE.md).
 """
 import json
 import shutil
@@ -21,20 +24,22 @@ import numpy as np
 import pandas as pd
 
 from baselines import gbm_sacs, marqueurs
-from . import donnees, mixte
+from . import donnees, mixte, recette
 
 POIDS_GBM = 0.3
 GBM_DEFAUT = {"config": "B", "jeu": "V2", "ajouts": ["planning", "ema"], "compresser": True}
 # World model du spécialiste de NPWD2532 : configuration de l'essai H1a (docs/RESULTATS.md).
 PHYSIQUE = {"physique": True, "familles": False, "facteur_niveau_prediction": 1.0}
+RECETTE = {"reinjection": False}
 SPECIALISTES = {"NPWD2532": {"gbm": 0.6, "physique": 0.4}, "NPWD2531": {"porte": "marqueurs"}}
 
 
 def entrainer(annees, dossier, poids_gbm=POIDS_GBM, gbm=None, gru_depuis=None, specialistes=True,
-              physique_depuis=None, **options):
+              physique_depuis=None, part_recette=0.0, recette_depuis=None, **options):
     """gru_depuis : dossier d'un gru_mixte déjà entraîné sur les mêmes années avec les mêmes options,
     copié au lieu d'être réentraîné (sur CPU, le GRU coûte des heures, le boosting quelques minutes).
-    physique_depuis : idem pour le world model physique du spécialiste de NPWD2532."""
+    physique_depuis : idem pour le world model physique du spécialiste de NPWD2532 ; recette_depuis : idem
+    pour le GRU recette (entraîné sinon avec RECETTE si part_recette > 0)."""
     dossier = Path(dossier)
     if gru_depuis and Path(gru_depuis).resolve() != dossier.resolve():
         dossier.mkdir(parents=True, exist_ok=True)
@@ -45,7 +50,14 @@ def entrainer(annees, dossier, poids_gbm=POIDS_GBM, gbm=None, gru_depuis=None, s
         mixte.entrainer(annees, dossier, **options)
     gbm_sacs.entrainer(annees, dossier / "gbm", **{**GBM_DEFAUT, **(gbm or {})})
     (dossier / "gbm" / "hors_sac.csv").unlink(missing_ok=True)  # diagnostic d'empilement, inutile ici
-    (dossier / "ensemble.json").write_text(json.dumps({"poids_gbm": poids_gbm}, indent=2) + "\n")
+    if part_recette:
+        if recette_depuis:
+            (dossier / "recette").mkdir(parents=True, exist_ok=True)
+            shutil.copy(Path(recette_depuis) / "recette.pt", dossier / "recette" / "recette.pt")
+        else:
+            recette.entrainer(annees, dossier / "recette", **RECETTE)
+    (dossier / "ensemble.json").write_text(json.dumps({"poids_gbm": poids_gbm, "part_recette": part_recette},
+                                                      indent=2) + "\n")
     if specialistes:
         entrainer_specialistes(annees, dossier, physique_depuis, **options)
 
@@ -64,13 +76,21 @@ def entrainer_specialistes(annees, dossier, physique_depuis=None, **options):
 
 
 def predire(test_dir, out, dossier, poids_gbm=None, sortie_incertitude=None, recalage=1.0, demi_vie=1440,
-            specialistes=True):
+            specialistes=True, part_recette=None):
     dossier = Path(dossier)
+    reglages = json.loads((dossier / "ensemble.json").read_text())
     if poids_gbm is None:
-        poids_gbm = json.loads((dossier / "ensemble.json").read_text())["poids_gbm"]
+        poids_gbm = reglages["poids_gbm"]
+    if part_recette is None:
+        part_recette = reglages.get("part_recette", 0.0)
     gru = mixte.predire(test_dir, out, dossier, sortie_incertitude)
+    if part_recette:
+        with tempfile.TemporaryDirectory() as temp:
+            autre = recette.predire(test_dir, Path(temp) / "recette.csv", dossier / "recette", recalage=1.0)
+        gru = (1 - part_recette) * gru + part_recette * autre
     if not poids_gbm:
-        return gru
+        return donnees.ecrire_predictions(gru.index.to_numpy(), np.clip(gru.to_numpy(), 0, None), gru.index.to_numpy(),
+                                          list(gru.columns), out)
     with tempfile.TemporaryDirectory() as temp:
         gbm = gbm_sacs.predire(test_dir, Path(temp) / "gbm.csv", dossier / "gbm", recalage, demi_vie)
     if not gru.index.equals(gbm.index) or list(gru.columns) != list(gbm.columns):

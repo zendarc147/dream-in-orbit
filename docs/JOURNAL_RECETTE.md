@@ -372,3 +372,31 @@ que −0.00005 de plus : non retenu (décision prise avant mesure, plateau).
 
 Installation à faire : G2 entraîné sur annee1 + annee2 (lancé sur Kaggle T4, `runs/final_recette_g2`),
 intégré à `dio/ensemble.py` comme troisième composant, puis revalidation des spécialistes.
+
+### Validation de l'ensemble complet (prédiction seule, `predict.py` → `evaluate.py`)
+
+Dossiers `runs/int_val_*` : GRU de validation (graines 0–4 ou 5–9) + GBM R + G2 de mêmes graines
+(`ensemble.json` : `{"poids_gbm": 0.3, "part_recette": 0.3}`), avec ou sans les spécialistes de
+`sp31_val_*` (inchangés).
+
+| | Directe 0–4 | Inverse 0–4 | Directe 5–9 | Inverse 5–9 | Moy. 0–4 | Moy. 5–9 |
+|---|---:|---:|---:|---:|---:|---:|
+| Modèle livré, sans spécialistes (`p3_val`) | 0.077975 | 0.081042 | 0.077769 | 0.081435 | 0.079509 | 0.079602 |
+| Nouveau, sans spécialistes | 0.076019 | 0.080522 | 0.075988 | 0.080653 | 0.078270 | 0.078321 |
+| Modèle livré, avec spécialistes (`sp31_val`) | 0.076748 | 0.079111 | 0.076533 | 0.079497 | 0.077930 | 0.078015 |
+| **Nouveau, avec spécialistes** | **0.075344** | **0.078703** | **0.075226** | **0.078900** | **0.077024** | **0.077063** |
+
+Les quatre RMSE baissent, avec ou sans spécialistes. Les spécialistes gardent leur apport (−0.0012
+à −0.0013) avec le nouveau GBM, alors que NPWD2532 utilise 0.6 × GBM.
+
+### Ablations depuis R (un ingrédient retiré à la fois) — session 5
+
+Référence : `e22b_recette_sans_ema` (0.078891). « Δ » : effet du **retrait** (positif = l'ingrédient aide).
+
+| Ablation | Seul dir. | Seul inv. | Moy. 4 | Δ | Lecture |
+|---|---:|---:|---:|---:|---|
+| avec filtre de fréquence | 0.077775 | 0.080954 | 0.078891 | 0 | prédictions identiques : les colonnes écartées ne servaient à aucun arbre |
+| cosinus de l'angle moyen (sans `soleil`) | 0.078619 | 0.080826 | 0.078904 | +0.000013 | moyenne des cosinus utile en directe seule (−0.0008) |
+| avec comptes par lettre | 0.077800 | 0.080969 | 0.078894 | +0.000003 | sans effet |
+| sans altitude | 0.077760 | 0.080934 | 0.078887 | −0.000004 | retrait permis par la règle (b), gain négligeable |
+| récence en fin d'heure, 168 h | 0.077604 | 0.081270 | 0.078932 | +0.000042 | la convention de début d'heure aide (inverse) |
