@@ -11,7 +11,7 @@ sont pas reportés ici ; seules les mesures du dépôt le sont.
 
 - Branche : `recette`.
 - État accepté du boosting (options de `gbm_sacs.entrainer`) :
-  `{"config": "B", "jeu": "V2", "ajouts": ["planning", "ema"]}` (boosting installé).
+  `{"config": "B", "jeu": "V2", "ajouts": ["planning", "ema"], "plan": {"changements": true}}` (E3 gardé).
 - Référence du boosting pour `outils/comparer_recette.py` : `ref_gbm` (voir phase 0).
 - Prochaine étape : voir la dernière section.
 - Runs Kaggle en cours : aucun (sinon `python outils/lancer_kaggle.py --fente N --rapatrier`).
@@ -234,3 +234,30 @@ ciblés, face sa− ; EMA gardées ; réglage D (arrêt anticipé), embargo 0, s
 `e22b_recette_sans_ema` : idem sans les EMA. Recalage sur power_init : mesuré avec et sans, à la
 prédiction (local). Session Kaggle CPU (fente 3) : les deux fentes GPU étaient prises, et le boosting
 n'utilise pas le GPU (accord de l'utilisateur).
+
+Résultats E3–E6 (prédictions refaites en local à partir des modèles Kaggle) :
+
+| Run | Seul dir. | Seul inv. | Mél. dir. | Mél. inv. | Moy. 4 | Δ | 2551 d/i | 2451 d/i | 2851 d/i | Décision |
+|---|---:|---:|---:|---:|---:|---:|---|---|---|---|
+| référence | 0.085825 | 0.082774 | 0.077872 | 0.081238 | 0.079555 | — | 20.67/12.98 | 14.89/14.51 | 5.91/6.10 | — |
+| E3 changements de variante | 0.085599 | 0.082514 | 0.077794 | 0.081212 | 0.079503 | −0.000053 | 20.60/12.90 | 14.88/14.48 | 5.97/6.11 | **garder (b)** |
+| E4 récence au début, 720 h, log1p | 0.086278 | 0.082646 | 0.077873 | 0.081193 | 0.079533 | −0.000022 | 21.13/12.90 | 14.81/14.53 | 5.88/6.07 | rejet |
+| E5 préfixes (comptes, récence) | 0.085563 | 0.083017 | 0.077738 | 0.081216 | 0.079477 | −0.000078 | 20.60/13.05 | 14.86/14.52 | 5.91/6.13 | rejet (inverse seul +0.00024) |
+| E6 paires de la liste | 0.085825 | 0.082774 | 0.077872 | 0.081238 | 0.079555 | 0 | idem | idem | idem | sans effet |
+
+- E3 : le boosting seul baisse dans les deux directions (−0.00023, −0.00026), le mélange un peu
+  (règle b). Gain faible, mais dans le sens attendu : la date d'un changement de variante sert sans
+  l'identité de la lettre.
+- E4 : la nouvelle convention dégrade la directe seule (+0.00045, 2551 surtout) ; le mélange bouge à peine.
+- E5 : meilleur mélange de la vague (−0.00008), mais l'inverse seul monte : la règle (a) demande
+  −0.0003 et la règle (b) deux baisses. À reconsidérer dans la recette complète.
+- E6 : prédictions identiques au bit près. Les paires PPNS/PPNE, PDNS/PDNE, UPBS/UPBE et UDBS/UDBE
+  (au plus 11 périodes par an) sont écartées par le filtre de fréquence ; MOCS/MOCE et PENS/PENE
+  étaient déjà apprises.
+
+**Nouvel état accepté** : `{"config": "B", "jeu": "V2", "ajouts": ["planning", "ema"], "plan": {"changements": true}}`
+(moyenne des 4 RMSE : 0.079503).
+
+Incident d'attente : la boucle `while pgrep -f "lancer_kaggle.py --fente"` se trouvait elle-même
+(le motif figure dans sa propre ligne de commande) et ne s'arrêtait jamais. Les runs étaient finis
+depuis plusieurs minutes. Attente désormais sur le PID du lanceur.
