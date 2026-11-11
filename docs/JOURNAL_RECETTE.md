@@ -345,8 +345,8 @@ Prédictions refaites en local.
   pour le GRU actuel). La recette n'a pas de correction de niveau tirée de power_init. L'option
   `recalage` de `predire` (même règle que le boosting : écart moyen entre power_init et la simulation
   libre sur ces heures, demi-vie 1440 h) réduit l'erreur, sans rattraper le GRU actuel.
-- **Décision : recette GRU rejetée comme remplaçant du GRU actuel.** Résultat reproduit pour les
-  graines 0–4 seulement (G1 graines 5–9 en cours, pour la trace).
+- **Décision : recette GRU rejetée comme remplaçant du GRU actuel.** Confirmé sur les graines 5–9
+  pour G1 : moyenne 0.097036 sans recalage, 0.093989 avec (graines 0–4 : 0.095731 et 0.092510).
 - **Hypothèse non confirmée** : diversité. Avec 0.3 × G2 recalé dans la part GRU (mélange
   0.7 × (0.7 GRU actuel + 0.3 G2) + 0.3 R) : 0.07886 → 0.07827, les deux directions baissent
   (0.0768 → 0.0760, 0.0809 → 0.0805). Poids choisi sur la validation, un seul groupe de graines :
