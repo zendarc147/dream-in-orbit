@@ -337,3 +337,97 @@ RMSE par horizon (jours 0–7, 7–30, 30–90, 90–180, 180–365, > 365) :
 
 **Décision : AR rejeté, non fusionné.** Aucun réglage supplémentaire tenté (règle d'arrêt :
 pas de recherche de paramètres sur une variante qui perd de 0.006 en moyenne).
+
+## Bilan (11 nov.)
+
+### Avant / après (validation, `evaluate.py`, prédictions locales)
+
+| Modèle | Directe 0–4 | Directe 5–9 | Inverse 0–4 | Inverse 5–9 | Moyenne des 4 |
+|---|---:|---:|---:|---:|---:|
+| Avant : GRU mixte installé le 10 nov. | 0.079062 | 0.078719 | 0.083579 | 0.084229 | 0.081397 |
+| **Après : ensemble 0.7 GRU + 0.3 boosting enrichi (`gru_gbm`)** | **0.077975** | **0.077769** | **0.081042** | **0.081435** | **0.079555** |
+| Écart | −0.001087 | −0.000950 | −0.002537 | −0.002794 | −0.001842 |
+
+### Contribution de chaque changement (moyenne des 4 RMSE de mélange)
+
+| Étape | Moyenne des 4 | Δ |
+|---|---:|---:|
+| GRU seul | 0.08140 | — |
+| + ancien boosting B_V2, poids 0.2 | 0.08051 | −0.00089 |
+| + commandes planifiées (planning), meilleur poids | 0.07976 | −0.00075 |
+| + moyennes exponentielles (ema), meilleur poids 0.4 | 0.07946 | −0.00030 |
+| poids fixé à 0.3 (robustesse, voir phase 3) | 0.07956 | +0.00010 |
+
+Changements testés et écartés : fenêtres passées 6–168 h (+0.00056), retrait des variables
+d'horloge indirecte (+0.00044), réglage lent C (−0.00010 pour un modèle 3 fois plus lourd),
+embargo 0 h (+0.00015) et 720 h (−0.00004), GRU autorégressif (seul +0.006 ; en mélange −0.00002).
+
+### Régressions par circuit
+
+Voir le tableau de la phase 3. Pertes : NPWD2851 et 2561 en directe (+0.0016 à +0.0018,
+gagnants en inverse), NPWD2482 et 2401 en inverse (+0.0012 à +0.0017, circuits presque
+constants). Tous les autres circuits gagnent dans les deux directions et les deux groupes.
+
+### Tests exécutés
+
+- `python -m unittest discover -s tests` : 67 tests, OK (avec les poids installés).
+- `tests/test_gbm_sacs.py` (8) : sacs et embargo, familles apprises sur l'entraînement, récence,
+  comptes futurs, périodes appariées, famille absente du test, causalité de l'historique et des
+  EMA, retrait de l'horloge, invariance par translation dans le temps, power_init hors variables.
+- `tests/test_ensemble.py` (3) : format, heures, 33 colonnes, valeurs finies et positives,
+  reproductibilité, mélange exact des deux composants, retour au GRU seul, power_init qui empiète
+  refusé, circuit absent et jour manquant dans power_init.
+- Entraînement final répété deux fois : prédictions identiques au bit près.
+
+### Fichiers et commits locaux (branche `ensemble-gbm`, rien de poussé)
+
+- `baselines/gbm_sacs.py` : ajouts planning / historique / ema, sans_horloge, réglage C,
+  compression lzma.
+- `dio/ensemble.py` (modèle `gru_gbm`, `modeles.FINAL`), `dio/modeles.py`,
+  `dio/autoregressif.py` (étude, non livrée).
+- `outils/ablations_gbm.sh`, `outils/resume_ablations.py` ; `outils/ablations.py` (options du
+  world model seules).
+- `tests/test_gbm_sacs.py`, `tests/test_ensemble.py`.
+- `poids/modele.json`, `poids/ensemble.json`, `poids/gbm/gbm_sacs.pkl.xz` (membres GRU inchangés).
+- `README.md`, `docs/RESULTATS.md`, ce journal.
+- Commits : `220b186`, `f56b72a`, `9c495c5`, `41c84b9` (+ ce bilan).
+- Prédictions de chaque étape (non versionnées, `runs/` est ignoré par git) : `runs/p1_*`,
+  `runs/p2_*` et `runs/p2_*_mel`, `runs/p3_val_*`, `runs/p3_final*`, `runs/p4_*`.
+
+### Coûts
+
+- CPU local (16 cœurs), avant la consigne Kaggle : ~1 h 30 d'entraînements de boosting
+  (9 variantes × 2 directions, 2 entraînements finaux), prédictions et mélanges quelques minutes.
+- Kaggle : témoin 8 min (T4), AR graines 5–9 47 min (T4), AR graines 0–4 en session CPU.
+- Modèle livré : poids 8.2 Mo (GRU) + 16.0 Mo (boosting) ; prédiction 18–19 s et 1.44 Go au pic
+  (GRU seul : 11 s, 0.89 Go) ; réentraînement du boosting 5 min 40 sur 16 cœurs.
+
+### Limites
+
+- Le poids 0.3 et les familles retenues sont choisis sur les deux validations : un léger
+  optimisme de sélection reste (4 décisions de familles, un scalaire), atténué par deux groupes
+  de graines et le fait que les gains se reproduisent dans les deux directions.
+- Le gain vient surtout de l'inverse (−0.0025 à −0.0028) ; la directe gagne −0.0010.
+- Le vocabulaire des commandes planifiées compte toutes les familles vues ≥ 20 fois à
+  l'entraînement : sur une année au planning très différent, le gain peut baisser (les familles
+  inconnues sont ignorées, pas d'erreur).
+- Les modèles de validation ont un an d'entraînement ; le modèle livré en a deux. Le poids 0.3 n'a
+  pas été vérifié pour ce cas.
+- Le sujet demande un réseau de neurones comme modèle final : le GRU garde 70 % du mélange et
+  le retour au GRU seul est une option de `predict.py`.
+- `python train.py` sans option réentraîne aussi les world models : il faut un GPU (sur CPU,
+  plusieurs heures), et la reproduction au bit près des membres GRU n'a été vérifiée que sur T4.
+- Écart Kaggle / local sur `validation_inverse` (dernière heure partielle de power_init) : toutes
+  les comparaisons de ce journal utilisent des prédictions locales.
+
+### Reproduire le modèle livré
+
+```bash
+# Boosting seul, world models installés réutilisés : reproduit exactement poids/ (~6 min, CPU)
+python train.py --options '{"gru_depuis": "poids"}'
+# Tout depuis zéro (world models + boosting), sur GPU T4 Kaggle
+python outils/lancer_kaggle.py --recuperer poids -- train.py
+# Prédire, avec ou sans le boosting
+python predict.py --test_dir DOSSIER --out predictions.csv
+python predict.py --test_dir DOSSIER --out predictions.csv --options '{"poids_gbm": 0}'
+```
