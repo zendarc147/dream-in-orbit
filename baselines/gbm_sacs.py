@@ -20,6 +20,9 @@ Ajouts optionnels (ablations de la phase 2, docs/JOURNAL_ENSEMBLE.md) :
 - ema : moyennes exponentielles (constantes de temps 3/12/48/168 h) des mêmes séries ;
 - orbite : harmoniques 2 à 4 de la phase orbitale et moyennes exponentielles longues
   (336 et 720 h) du flux éclairé par face et de l'ombre (inertie thermique lente) ;
+- regimes : par famille du planning, comptes dans les fenêtres centrées de ±24 h et ±168 h
+  (le planning est connu d'avance : marqueur d'un mode, ex. ATTTF410 pendant le palier 0.1
+  de NPWD2531) ;
 - sans_horloge : retire les distances et angles ltdata, lents et quasi monotones sur une
   année, qui servent d'horloge indirecte.
 Options des spécialistes (docs/JOURNAL_SPECIALISTES.md) : circuits (n'apprendre que
@@ -49,6 +52,7 @@ HORLOGE = ["ltdata_sunmars_km", "ltdata_earthmars_km", "ltdata_sunmarsearthangle
 FENETRES_HISTOIRE = (6, 24, 72, 168)
 CONSTANTES_EMA = (3, 12, 48, 168)
 CONSTANTES_LENTES = (336, 720)
+DEMI_FENETRES_REGIME = (24, 168)
 HARMONIQUES_ORBITE = (2, 3, 4)
 PLAFOND_RECENCE_H = 168
 DUREE_MAX_PERIODE = 7 * 24 * H
@@ -117,6 +121,20 @@ def variables_planning(dmop, heures, planning):
     return pd.DataFrame(sortie, index=heures)
 
 
+def variables_regimes(dmop, heures, planning):
+    """Comptes de chaque famille du planning dans [t - w, t + w] (heures entières)."""
+    heures = np.asarray(heures, dtype=np.int64)
+    table = dmop.assign(subsystem=dmop.subsystem.map(famille_etendue))
+    comptes = commandes.impulsions(table, heures, planning["familles"])
+    cumul = np.vstack([np.zeros((1, comptes.shape[1])), np.cumsum(comptes, axis=0)])
+    t, n = np.arange(len(heures)), len(heures)
+    sortie = {}
+    for w in DEMI_FENETRES_REGIME:
+        fenetre = cumul[np.minimum(t + w + 1, n)] - cumul[np.maximum(t - w, 0)]
+        sortie.update({f"plan_{f}_pm{w}h": fenetre[:, j] for j, f in enumerate(planning["familles"])})
+    return pd.DataFrame(sortie, index=heures)
+
+
 def series_contexte(x):
     """Flux solaire éclairé par face, ombre, modes de pointage ftl et communications."""
     physique = variables.physiques(x)
@@ -165,7 +183,7 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
         return x.copy()
     if jeu not in ("V1", "V2"):
         raise ValueError(f"Jeu de variables inconnu : {jeu}")
-    inconnus = set(ajouts) - {"planning", "historique", "ema", "orbite"}
+    inconnus = set(ajouts) - {"planning", "historique", "ema", "orbite", "regimes"}
     if inconnus:
         raise ValueError(f"Ajouts inconnus : {sorted(inconnus)}")
     table = variables.ajouter_v2r(x)
@@ -181,6 +199,8 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
         blocs.append(moyennes_exponentielles(x))
     if "orbite" in ajouts:
         blocs.append(orbite(x, table))
+    if "regimes" in ajouts:
+        blocs.append(variables_regimes(dmop, x.index.to_numpy(), planning).set_axis(x.index))
     table = pd.concat(blocs, axis=1)
     if sans_horloge:
         table = table.drop(columns=HORLOGE)
@@ -196,7 +216,7 @@ def sacs_temporels(n, sacs, embargo):
     return [(t[(t < a - embargo) | (t >= b + embargo)], t[a:b]) for a, b in zip(bornes[:-1], bornes[1:])]
 
 
-def _ajuster(f, y, lignes, config, graine):
+def _ajuster(f, y, lignes, config, graine, perte="squared_error"):
     """Un circuit, un sac ; un seul thread par processus (les données sont petites)."""
     y = y[lignes]
     connus = np.isfinite(y)  # cibles absentes retirées, jamais remplacées
@@ -204,21 +224,24 @@ def _ajuster(f, y, lignes, config, graine):
         if config == "ET":
             modele = ExtraTreesRegressor(**EXTRA_TREES, random_state=graine, n_jobs=1)
         else:
-            modele = HistGradientBoostingRegressor(**REGLAGES[config], early_stopping=False, random_state=graine)
+            modele = HistGradientBoostingRegressor(**REGLAGES[config], loss=perte, early_stopping=False,
+                                                   random_state=graine)
         return modele.fit(f[lignes][connus], y[connus])
 
 
 def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filtre=True, graine=0,
-              ajouts=(), sans_horloge=False, compresser=False, circuits=None, lissage_cible=0):
+              ajouts=(), sans_horloge=False, compresser=False, circuits=None, lissage_cible=0,
+              perte="squared_error"):
     """compresser : gbm_sacs.pkl.xz (lzma, environ 8 fois plus petit, 2 min de plus à l'écriture).
     circuits : colonnes apprises (toutes par défaut) ; lissage_cible : fenêtre en heures de la moyenne
-    centrée appliquée aux cibles de chaque année (0 : cibles horaires brutes)."""
+    centrée appliquée aux cibles de chaque année (0 : cibles horaires brutes) ; perte : « absolute_error »
+    apprend la médiane conditionnelle (un mode rare et inexpliqué ne tire plus le niveau de base)."""
     schema = donnees.charger_schema()
     noms = list(circuits or schema["target_columns"])
     indices = [schema["target_columns"].index(c) for c in noms]
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
     familles = variables.apprendre_familles(list(tables.values())) if jeu == "V2" else []
-    planning = apprendre_planning(list(tables.values())) if "planning" in ajouts else None
+    planning = apprendre_planning(list(tables.values())) if {"planning", "regimes"} & set(ajouts) else None
     heures, blocs, ys = [], [], []
     for annee in annees:
         h, x, y = donnees.charger_annee(annee, schema)
@@ -237,7 +260,7 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
     n_circuits = y.shape[1]
     processus = int(os.environ.get("MONDE_PROCESSUS", os.cpu_count() or 1))
     ajustes = Parallel(n_jobs=processus)(
-        delayed(_ajuster)(f, y[:, i], lignes, config, graine)
+        delayed(_ajuster)(f, y[:, i], lignes, config, graine, perte)
         for lignes, _ in decoupe for i in range(n_circuits))
     modeles = [ajustes[k * n_circuits:(k + 1) * n_circuits] for k in range(len(decoupe))]
     dossier = Path(dossier)
@@ -251,7 +274,7 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
     with (lzma.open(dossier / "gbm_sacs.pkl.xz", "wb") if compresser else open(dossier / "gbm_sacs.pkl", "wb")) as fichier:
         pickle.dump({"config": config, "jeu": jeu, "colonnes": colonnes, "familles": familles,
                      "ajouts": list(ajouts), "planning": planning, "sans_horloge": sans_horloge,
-                     "circuits": noms, "lissage_cible": lissage_cible, "annees": list(annees), "modeles": modeles}, fichier)
+                     "circuits": noms, "lissage_cible": lissage_cible, "perte": perte, "annees": list(annees), "modeles": modeles}, fichier)
     print(f"{len(modeles)} sac(s) × {n_circuits} boostings ({config}, {jeu}, {len(colonnes)} variables)"
           f" entraînés sur {', '.join(annees)}")
 

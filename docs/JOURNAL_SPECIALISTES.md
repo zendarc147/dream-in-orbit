@@ -126,3 +126,87 @@ est ajouté ici, après la mesure, et il est dit comme tel.
   `lissage_cible` et ajout `orbite` de `baselines/gbm_sacs.py` ; `poids_circuits` et
   `lissage_cible` de `dio/monde.py` ; `outils/plafond_circuits.py`, `outils/specialistes.py` ;
   test `test_lissage_cible_garde_les_trous_et_les_autres_colonnes`. Suite complète : 68 tests, OK.
+
+# NPWD2531 et NPWD2532 (11 novembre 2026, suite)
+
+Demande : traiter la plus grande marge restante, NPWD2531 et NPWD2532, mêmes règles.
+
+## Plafond
+
+| | Directe | Inverse |
+|---|---:|---:|
+| Modèle livré (graines 0–4) | 0.0780 | 0.0810 |
+| 2531 et 2532 parfaits | 0.0724 | 0.0667 |
+
+L'erreur de 2531 est surtout lente : 67 % (directe) et 84 % (inverse) de sa MSE tient dans les
+moyennes hebdomadaires. 2531 a trois modes : éteint (0.001, 78 % des heures), un palier
+d'impulsions de moyenne 0.1, et des campagnes à 0.6 (18 % d'annee1, 1 % d'annee2).
+- Le palier 0.1 est marqué par les commandes ATTTF410/420 dans les deux années. C'est une suite
+  d'impulsions : médiane 0.001, moyenne 0.09 à 0.11 sur les heures marquées.
+- Les campagnes à 0.6 n'ont aucun marqueur commun aux deux années (ATMB045 n'existe qu'en annee1).
+- En directe, le modèle appris sur annee1 prédit un faux palier de 0.1 partout (la moyenne des
+  campagnes). En inverse, il fait décroître la campagne initiale (0.57) alors qu'elle tient
+  20 semaines.
+
+## Essais (`outils/specialistes.py`, prédictions de validation locales)
+
+| Essai | 2531 directe | 2531 inverse | 2532 directe | 2532 inverse |
+|---|---:|---:|---:|---:|
+| Modèle livré | 0.1118 | 0.1850 | 0.1228 | 0.1888 |
+| Boosting seul (livré) | 0.1067 | 0.1815 | 0.1263 | 0.1760 |
+| Boosting + fenêtres du planning ±24/168 h (`regimes`) | 0.1066 | 0.1817 | 0.1263 | 0.1755 |
+| Boosting à perte absolue (médiane) | 0.0881 | 0.1790 | 0.1279 | 0.1919 |
+| Liste de marqueurs seule (`baselines/marqueurs.py`) | 0.0823 | 0.1822 | – | – |
+| **Porte : ensemble près d'un marqueur (±168 h), médiane recalée ailleurs** | **0.0825** | **0.1740** | – | – |
+| **0.6 boosting + 0.4 GRU physique (H1a)** | – | – | **0.1205** | **0.1714** |
+
+- La perte absolue efface le palier 0.1 en inverse (médiane d'impulsions = 0) : la seconde
+  moitié de l'inverse monte de +0.025. La liste seule fait de même dans le palier, car un niveau
+  plat ne suit pas l'heure des impulsions.
+- La porte garde l'ensemble là où un marqueur est proche, et met la médiane recalée ailleurs.
+  Elle baisse les 4 cas et les 8 moitiés de période. Une porte à ±24 h laissait l'inverse
+  monter de +0.0022 sur une moitié (graines 0–4) ; ±168 h, l'autre fenêtre déjà définie, est
+  retenue. Ce choix est fait sur les validations.
+- Marqueurs appris automatiquement (liste gloutonne, ≤ 3 familles, gain ≥ 1 %) : ATMB045 puis
+  SCMN sur annee1, ATTTF420 puis ATMB076 sur annee2, et ATMB045, SCMN, ATTTF420 pour le modèle
+  final. Une famille fréquente (SCMN, 93 % des heures d'annee1) peut entrer dans la liste en
+  couvrant une partie des campagnes. Le test synthétique le montre aussi. Effet : la porte
+  garde alors l'ensemble plus souvent, ce qui revient au modèle livré.
+- 2532 : poids appris sur une direction et appliqués à l'autre (critère rempli, toutes les
+  moitiés baissent), puis poids communs aux deux validations. Le GRU physique (H1a) a été
+  réentraîné sur T4 Kaggle : il reproduit exactement les scores d'H1a (0.085326 / 0.087586).
+  Ses poids de validation n'existent que pour les graines 0–4, utilisées pour les deux groupes.
+
+```
+python outils/lancer_kaggle.py --fente 1 --sans-attendre -- outils/valider.py --nom sp_phys --modele gru_mixte \
+  --options '{"physique": true, "familles": false, "facteur_niveau_prediction": 1.0}'
+python outils/lancer_kaggle.py --fente 2 --sans-attendre -- train.py --modele gru_mixte --out runs/sp_phys_final \
+  --options '{"physique": true, "familles": false, "facteur_niveau_prediction": 1.0}'
+```
+
+## Validation de bout en bout (`predict.py` → `evaluate.py`, `runs/sp31_val_g04`, `runs/sp31_val_g59`)
+
+| | Directe 0–4 | Directe 5–9 | Inverse 0–4 | Inverse 5–9 | Moyenne des 4 |
+|---|---:|---:|---:|---:|---:|
+| Modèle livré | 0.077975 | 0.077769 | 0.081042 | 0.081435 | 0.079555 |
+| **+ spécialistes 2531 / 2532** | **0.076748** | **0.076533** | **0.079111** | **0.079497** | **0.077972** |
+
+Les 8 moitiés de période baissent (directe 0.0692 → 0.0668 et 0.0859 → 0.0855 ; inverse 0.0850
+→ 0.0824 et 0.0769 → 0.0757, graines 0–4). Seules les colonnes 2531 et 2532 changent : les 31
+autres sont identiques au bit près (vérifié, et testé dans `tests/test_ensemble.py`).
+
+## Installation
+
+`poids/specialiste/` : `physique/` (GRU physique annee1 + annee2, T4 Kaggle, 7 Mo),
+`marqueurs.json`, `specialistes.json`. Modèle livré dans `poids/` inchangé par ailleurs.
+Prédiction : 53 s sur CPU local au lieu de 18 s (un ensemble de GRU de plus). Retour à
+l'ensemble précédent : `--options '{"specialistes": false}'`. Reproduction :
+`python train.py --options '{"gru_depuis": "poids", "physique_depuis": "runs/sp_phys_final"}'`
+(boosting réentraîné, environ 6 min), ou `python train.py` complet sur GPU.
+Tests : 70, OK (`tests/test_marqueurs.py`, test des colonnes inchangées dans `tests/test_ensemble.py`).
+
+Limites :
+- Le poids de 2532 (0.6 / 0.4) et la fenêtre de la porte (±168 h) sont choisis sur les deux
+  validations : un optimisme de sélection reste.
+- La porte suppose qu'une campagne de 2531 sans marqueur ne se voit que dans power_init. Une
+  campagne qui démarre en cours de période sans marqueur connu serait prédite à 0.

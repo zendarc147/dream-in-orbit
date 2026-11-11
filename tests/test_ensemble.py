@@ -53,10 +53,22 @@ class EnsembleTest(unittest.TestCase):
     def test_reproductible_et_melange_des_deux_composants(self):
         np.testing.assert_array_equal(predire(TEST, self.temp.name).to_numpy(), self.ensemble.to_numpy())
         gru = predire(TEST, self.temp.name, poids_gbm=0).set_index("ut_ms")
-        gbm = predire(TEST, self.temp.name, poids_gbm=1).set_index("ut_ms")
+        gbm = predire(TEST, self.temp.name, poids_gbm=1, specialistes=False).set_index("ut_ms")
         w = json.loads((POIDS / "ensemble.json").read_text())["poids_gbm"]
-        np.testing.assert_allclose(self.ensemble.set_index("ut_ms"), (1 - w) * gru + w * gbm, atol=1e-9)
+        seul = predire(TEST, self.temp.name, specialistes=False).set_index("ut_ms")
+        np.testing.assert_allclose(seul, (1 - w) * gru + w * gbm, atol=1e-9)
         self.assertGreater(np.abs(gru - gbm).to_numpy().max(), 1e-3)
+
+    @unittest.skipUnless((POIDS / "specialiste" / "specialistes.json").is_file(), "pas de spécialistes")
+    def test_specialistes_ne_changent_que_leurs_colonnes(self):
+        seul = predire(TEST, self.temp.name, specialistes=False).set_index("ut_ms")
+        avec = self.ensemble.set_index("ut_ms")
+        regles = json.loads((POIDS / "specialiste" / "specialistes.json").read_text())
+        autres = [c for c in avec.columns if c not in regles]
+        self.assertEqual(len(autres), 31)
+        np.testing.assert_array_equal(avec[autres].to_numpy(), seul[autres].to_numpy())
+        for c in regles:
+            self.assertGreater(np.abs(avec[c] - seul[c]).max(), 1e-3)
 
     def test_consommation_future_refusee_et_cibles_manquantes(self):
         with tempfile.TemporaryDirectory() as temp:

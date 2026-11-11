@@ -19,7 +19,8 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + borne du résidu initial élargie seulement à la prédiction pour les circuits variables à l'entraînement | 0.0827 | 0.0881 | 0.0854 |
 | + régularisations de robustesse (masquage SAAF par blocs, abandon groupé des états de commandes) | 0.0826 | 0.0885 | 0.0855 |
 | + familles de commandes dmop en entrée du GRU + correction de niveau × 1.5 à la prédiction | 0.0791 | 0.0836 | 0.0813 |
-| **+ mélange avec un boosting à sacs temporels enrichi (commandes planifiées, moyennes exponentielles), poids 0.3, modèle final** | **0.0780** | **0.0810** | **0.0795** |
+| + mélange avec un boosting à sacs temporels enrichi (commandes planifiées, moyennes exponentielles), poids 0.3 | 0.0780 | 0.0810 | 0.0795 |
+| **+ spécialistes : porte de régime par marqueurs pour NPWD2531, boosting + GRU physique pour NPWD2532, modèle final** | **0.0767** | **0.0791** | **0.0779** |
 
 Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
 Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
@@ -37,6 +38,13 @@ exponentielles du flux solaire, de l'ombre, du pointage et des communications. E
 0–4 : 0.0780 / 0.0810 ; graines 5–9 : 0.0778 / 0.0814 (GRU seul : 0.0791 / 0.0836 et
 0.0787 / 0.0842, recalculés en local). Le GRU reste majoritaire et le retour au GRU seul est
 une option de prédiction. Ablations, critères et limites : `docs/JOURNAL_ENSEMBLE.md`.
+
+Deux colonnes ont un spécialiste (`poids/specialiste/`, `docs/JOURNAL_SPECIALISTES.md`).
+NPWD2531 garde l'ensemble près des familles de commandes qui marquent ses modes (apprises sur
+l'entraînement : ATMB045, SCMN, ATTTF420) ; ailleurs, il prend son niveau médian recalé sur
+power_init, au lieu du faux palier qu'apprend un modèle en moyenne. NPWD2532 vaut 0.6 × boosting +
+0.4 × world model avec variables physiques. Les 31 autres colonnes sont inchangées. Graines 5–9 :
+0.0765 / 0.0795. Retour à l'ensemble sans spécialistes : `--options '{"specialistes": false}'`.
 
 Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).
@@ -61,8 +69,8 @@ python predict.py --test_dir DOSSIER --out predictions.csv
 
 `DOSSIER` contient `dmop.csv`, `evtf.csv`, `ftl.csv`, `saaf.csv`, `ltdata.csv`,
 `power_init.csv` et `heures_a_predire.csv`. Les poids commités sont dans `poids/`
-(`modele.json`, `ensemble.json`, `membres.json`, `membre*/monde.pt`, `gbm/gbm_sacs.pkl.xz`).
-Environ 20 s et 1.5 Go de mémoire sur CPU.
+(`modele.json`, `ensemble.json`, `membres.json`, `membre*/monde.pt`, `gbm/gbm_sacs.pkl.xz`,
+`specialiste/`). Environ 55 s et 1.5 Go de mémoire sur CPU.
 
 GRU seul (sans le boosting), avec les mêmes poids :
 
@@ -87,7 +95,7 @@ Entraîne l'ensemble final (world models GRU puis boosting) sur annee1 + annee2 
 models déjà installés, ce qui reproduit exactement les poids livrés :
 
 ```bash
-python train.py --options '{"gru_depuis": "poids"}'
+python train.py --options '{"gru_depuis": "poids", "physique_depuis": "poids/specialiste/physique"}'
 ```
 
 Les données horaires

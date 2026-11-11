@@ -728,3 +728,11 @@ cycles de 5 à 20 min : leur moyenne horaire dépend d'une phase que rien dans l
 Leviers testés : boosting spécialiste (orbite, réglage A, cible lissée), GRU pondéré ×4 avec ou sans
 cible lissée (T4 Kaggle), 10 graines, mélange par colonne avec poids transférés d'une direction à
 l'autre. Le seul mélange accepté gagne −0.00012 au total : non installé, `poids/` est inchangé.
+
+## Spécialistes NPWD2531 / NPWD2532 — 11 novembre 2026
+
+Détail : `docs/JOURNAL_SPECIALISTES.md`. NPWD2531 : porte de régime par marqueurs du planning
+(`baselines/marqueurs.py`) : près d'une famille marqueur on garde l'ensemble, ailleurs la médiane
+recalée sur power_init. NPWD2532 : 0.6 × boosting + 0.4 × GRU physique (H1a). Validation, moyenne
+des 4 RMSE : 0.079555 → 0.077972 (directe 0.0767 / 0.0765, inverse 0.0791 / 0.0795) ; les 31 autres
+colonnes sont inchangées au bit près. Installé dans `poids/specialiste/`.
