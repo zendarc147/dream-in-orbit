@@ -10,6 +10,7 @@ Différences avec monde.py :
   période, état caché et dernière sortie conservés (détachés) ; arrivé au bout, il repart d'un
   point tiré au hasard, avec un nouvel état initial lu sur 7 jours réels.
 Prédiction : simulation libre complète, partant de la dernière heure connue de power_init.
+Entraînement sur GPU si disponible (une graine par processus), prédiction sur CPU.
 Variables : celles de monde.py (même préparation, mêmes statistiques), sans branche de commandes
 ni correction de niveau : le retour des sorties doit porter seul le niveau initial.
 """
@@ -31,6 +32,7 @@ CONFIG_DEFAUT = {
     "lot": 32, "pas": 600, "lr": 3e-3, "weight_decay": 1e-4, "ema": 0.99, "fin_echantillonnage": 0.5,
     "bruit_retour": 0.0, "graines": [0, 1, 2, 3, 4],
 }
+APPAREIL = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class MondeAR(nn.Module):
@@ -84,8 +86,9 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
     rng = np.random.default_rng(graine)
     ti, morceau, lot = config["jours_init"] * 24, config["morceau_h"], config["lot"]
     moyenne, ecart = stats["y_moyenne"], stats["y_ecart"]
-    m_t, e_t = torch.as_tensor(moyenne, dtype=torch.float32), torch.as_tensor(ecart, dtype=torch.float32)
-    modele = MondeAR(int(stats["garder"].sum()), n_circuits, config["taille"], config["couches"])
+    m_t = torch.as_tensor(moyenne, dtype=torch.float32, device=APPAREIL)
+    e_t = torch.as_tensor(ecart, dtype=torch.float32, device=APPAREIL)
+    modele = MondeAR(int(stats["garder"].sum()), n_circuits, config["taille"], config["couches"]).to(APPAREIL)
     optim = torch.optim.AdamW(modele.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
     plan = torch.optim.lr_scheduler.OneCycleLR(optim, max_lr=config["lr"], total_steps=config["pas"], pct_start=0.1)
     moyen = torch.optim.swa_utils.AveragedModel(
@@ -106,14 +109,14 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
                 f, y = periodes[p]
                 xi.append(monde.normaliser_entrees(f[s:s + ti], stats))
                 yi.append(monde.normaliser_courants(y[s:s + ti], moyenne, ecart))
-            xi = torch.as_tensor(np.stack(xi), dtype=torch.float32)
-            yi = torch.as_tensor(np.stack(yi), dtype=torch.float32)
+            xi = torch.as_tensor(np.stack(xi), dtype=torch.float32, device=APPAREIL)
+            yi = torch.as_tensor(np.stack(yi), dtype=torch.float32, device=APPAREIL)
             h0 = modele.etat_initial(xi, yi)
             p0 = dernier_connu(yi[..., :n_circuits], yi[..., n_circuits:])
             if h is None:
                 h, precedent = h0, p0
             else:
-                index = torch.as_tensor(nouveaux)
+                index = torch.as_tensor(nouveaux, device=APPAREIL)
                 h = [hh.index_copy(0, index, h0i) for hh, h0i in zip(h, h0)]
                 precedent = precedent.index_copy(0, index, p0)
         xs, ys = [], []
@@ -123,8 +126,8 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
             xs.append(monde.normaliser_entrees(f[s:s + morceau], stats))
             ys.append(y[s:s + morceau])
             flux[b] = (p, s + morceau)
-        x = torch.as_tensor(np.stack(xs), dtype=torch.float32)
-        cible = torch.as_tensor(np.stack(ys), dtype=torch.float32)
+        x = torch.as_tensor(np.stack(xs), dtype=torch.float32, device=APPAREIL)
+        cible = torch.as_tensor(np.stack(ys), dtype=torch.float32, device=APPAREIL)
         verite = (cible - m_t) / e_t
         sortie, h, precedent = modele.avancer(x, h, precedent, verite, p_verite, config["bruit_retour"])
         brute = sortie * e_t + m_t
@@ -142,7 +145,7 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
         if pas % 100 == 0 or pas == config["pas"] - 1:
             print(f"  graine {graine} pas {pas:5d} p_verite {p_verite:.2f} RMSE lissée {cumul ** 0.5:.4f}"
                   f" ({time.time() - debut:.0f} s)", flush=True)
-    return (moyen.module if moyen is not None else modele)
+    return (moyen.module if moyen is not None else modele).cpu()
 
 
 def _entrainer_graine(arguments):

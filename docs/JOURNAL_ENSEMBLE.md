@@ -270,3 +270,70 @@ Régressions : NPWD2851 (+0.0016 / +0.0018) et NPWD2561 (+0.0018 / +0.0017) en d
 qu'ils gagnent en inverse ; NPWD2482 (+0.0013 / +0.0012) et NPWD2401 (+0.0017 / +0.0015) en
 inverse, circuits presque constants dont le boosting rate le niveau d'annee1. Plus forts gains :
 NPWD2532 (−0.010 en moyenne, −0.016 en inverse), 2531 (−0.008), 2742, 2881, 2551.
+
+## Phase 4 — GRU autorégressif (11 nov., 01 h 30 puis 09 h 00)
+
+Module `dio/autoregressif.py` (modèle `gru_ar`, non livré) : le simulateur reçoit les 33
+courants de l'heure précédente, vérité ou propre prédiction ; scheduled sampling (probabilité
+de la vérité 1 → 0 sur la première moitié des 600 pas) ; flux continus (32 flux qui avancent par
+morceaux de 720 h, état et dernière sortie conservés, redémarrage aléatoire au bout de la
+période) ; tête résiduelle (variation horaire) ; ni branche de commandes ni correction de
+niveau. Prédiction : simulation libre complète depuis la dernière heure de `power_init`.
+Témoin non autorégressif aux mêmes variables (`gru`, v2r + familles, sans commandes AOOO/ATTT,
+sans bruit ni masquage, facteur de niveau 1) pour isoler l'effet du retour des sorties.
+
+Incident : la session s'est arrêtée vers 01 h 35 pendant les deux premiers entraînements
+locaux ; leurs processus sont morts au pas 0, sans résultat. À 09 h 00, consigne de
+l'utilisateur : tous les entraînements sur Kaggle. Runs locaux arrêtés et supprimés ;
+relance avec `outils/lancer_kaggle.py` :
+
+```
+python outils/lancer_kaggle.py --cpu --fente 1 --sans-attendre -- outils/valider.py --nom p4_ar --modele gru_ar
+python outils/lancer_kaggle.py --fente 2 --sans-attendre -- outils/valider.py --nom p4_temoin --modele gru \
+  --options '{"variables": "v2r", "bruit": 0.0, "commandes": null, "branche_commandes": null,
+              "masque_saaf": 0.0, "abandon_etats": 0.0, "facteur_niveau_prediction": 1.0}'
+```
+
+Les prédictions des poids rapatriés seront refaites en local (moins de 2 min) pour comparer au
+GRU de référence sur les mêmes dossiers de validation.
+
+Relance des graines 5–9 sur GPU T4 (`dio/autoregressif.py` entraîne sur CUDA quand il est
+disponible ; consigne de l'utilisateur à 09 h 55 : GPU T4) ; les graines 0–4, déjà lancées en
+session CPU, sont laissées finir :
+
+```
+python outils/lancer_kaggle.py --fente 2 --sans-attendre -- outils/valider.py --nom p4_ar_g59 \
+  --modele gru_ar --options '{"graines": [5, 6, 7, 8, 9]}'
+```
+
+Coût : témoin 7 min 40 (T4, 2 directions en parallèle) ; AR graines 5–9 47 min (T4, 2 graines à
+la fois par direction, boucle heure par heure : le GPU accélère peu). Prédictions refaites en local.
+
+| Modèle (simulation libre complète) | Directe | Inverse | Moyenne |
+|---|---:|---:|---:|
+| GRU mixte actuel, graines 5–9 | 0.078719 | 0.084229 | 0.081474 |
+| Témoin non autorégressif (v2r + familles, 1 membre, graines 0–4) | 0.080236 | 0.084501 | 0.082369 |
+| **AR, graines 5–9** | **0.084643** | **0.090977** | **0.087810** |
+
+RMSE par horizon (jours 0–7, 7–30, 30–90, 90–180, 180–365, > 365) :
+
+| | Directe | Inverse |
+|---|---|---|
+| GRU actuel 5–9 | 0.043 0.043 0.074 0.071 0.072 0.088 | 0.059 0.075 0.095 0.102 0.082 0.079 |
+| Témoin | 0.043 0.046 0.073 0.072 0.074 0.090 | 0.062 0.082 0.098 0.102 0.081 0.079 |
+| AR 5–9 | 0.043 0.044 0.076 0.082 0.078 0.093 | 0.123 0.131 0.119 0.114 0.080 0.078 |
+
+- L'AR ne dérive pas sur le long terme : au-delà de 180 jours en inverse il égale ou bat
+  légèrement le GRU (0.0798 contre 0.0816, 0.0783 contre 0.0788). Le scheduled sampling et les
+  flux continus ont donc rendu la simulation libre stable sur 680 jours.
+- Il perd au début de l'inverse (30 premiers jours 0.13 contre 0.06–0.07) : presque tout vient de
+  NPWD2531 (contribution MSE 104e-4 contre 6e-4), dont le niveau initial élevé (0.57) est mal
+  propagé par le retour des sorties. En directe, il perd surtout entre 90 et 365 jours.
+- La RMSE d'entraînement lissée finit vers 0.028 en simulation libre dans les flux
+  d'entraînement, contre 0.085–0.091 en validation : l'AR apprend très bien son année et
+  généralise moins bien que le GRU sans retour.
+- Ablation de fusion (`outils/melanger.py --gru runs/p3_val_g59 --autre runs/p4_ar_g59`) :
+  ensemble livré + AR, poids 0.1 → 0.07960 → 0.07958 de moyenne (−0.00002). Pas d'apport.
+
+**Décision : AR rejeté, non fusionné.** Aucun réglage supplémentaire tenté (règle d'arrêt :
+pas de recherche de paramètres sur une variante qui perd de 0.006 en moyenne).
