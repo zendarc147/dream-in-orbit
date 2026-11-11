@@ -237,6 +237,14 @@ def decalages(x, table):
     return pd.DataFrame(sortie, index=x.index)
 
 
+def face_sa_moins(x, table):
+    """Flux de la face sa− : constante solaire × max(−cos sa, 0), brut et éclairé (même ombre que physiques)."""
+    soleil = x["ltdata_solarconstantmars"].to_numpy(dtype=np.float64)
+    ombre = np.clip((x["evtf_MAR_UMBRA_minutes"] + 0.5 * x["evtf_MAR_PENUMBRA_minutes"]).to_numpy() / 60, 0, 1)
+    flux = soleil * np.maximum(-table["saaf_sa_cos"].to_numpy(dtype=np.float64), 0)
+    return pd.DataFrame({"flux_sa_moins": flux, "flux_sa_moins_eclaire": flux * (1 - ombre)}, index=x.index)
+
+
 def histoires_ciblees(x):
     """Ombre (umbra + 0.5 pénombre, fraction d'heure) cumulée sur 7 et 24 h, moyenne sur 168 h, heures
     depuis la dernière heure d'ombre (log1p, plafond 720 h) ; flux éclairé total moyen sur 6 et 24 h ;
@@ -328,7 +336,8 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
         raise ValueError(f"Jeu de variables inconnu : {jeu}")
     if contexte:
         x = preparer_contexte(x, contextes, contexte)
-    inconnus = (set(ajouts) - {"planning", "historique", "ema", "orbite", "regimes", "decalages", "histoires"}
+    inconnus = (set(ajouts) - {"planning", "historique", "ema", "orbite", "regimes", "decalages", "histoires",
+                               "face_sa_moins"}
                 - AJOUTS_CONTEXTE)
     if inconnus:
         raise ValueError(f"Ajouts inconnus : {sorted(inconnus)}")
@@ -354,6 +363,8 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
             blocs.append(geo.drop(columns="geo_altitude_km"))
         if "altitude" in ajouts:
             blocs.append(geo[["geo_altitude_km"]])
+    if "face_sa_moins" in ajouts:  # E16 : les flux V2 n'ont que la face sa+ (sx−, sy−, sz− existent)
+        blocs.append(face_sa_moins(x, blocs[0]))
     if "decalages" in ajouts:
         blocs.append(decalages(x, blocs[0]))
     if "histoires" in ajouts:

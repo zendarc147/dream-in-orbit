@@ -134,6 +134,63 @@ installé ne change pas) :
   change donc rien, et il n'est pas lancé seul. Il reste testé dans la recette complète (E22), avec le
   test sans filtre (E20). Pairage : un DEI_UMBRA_END rangé avant son START au même instant ouvrait un
   faux intervalle de plusieurs mois. Les paires de plus de 6 h (ombres) ou 24 h (contacts) sont écartées.
+- **Flux par face (E16), corrigé après vérification colonne par colonne.** Formule :
+  `(constante/600) × max(±cos, 0) × clip(1 − umbra − 0.5 pénombre, 0, 1)`, avec la moyenne horaire des
+  cosinus des mesures. Écart maximal avec `flux_*_eclaire / 600` :
+  - boosting installé (cosinus de l'angle moyen) : 0.1 à 0.4 selon la face et l'année. **Pas
+    équivalent** : ma première conclusion (simple division par 600) était fausse ;
+  - option `soleil: "mesures"` : 1e-16 sur annee1 ; écarts sur annee2, aux 259 heures sans mesure
+    (cosinus de l'angle moyen rempli) ;
+  - option `soleil: "interpole"` : 1e-16 sur les deux années ;
+  - correction d'ombre : `1 − clip(u + 0.5p, 0, 1)` et `clip(1 − u − 0.5p, 0, 1)` sont égales
+    (u, p ≥ 0) ; signes des faces identiques, sx− toujours nul ; **face sa− absente** du V2 (non nulle
+    sur 0.01 % des heures, écartée par le filtre).
+  E16 se ramène donc à E7/E8 (moyenne des cosinus), plus la face sa− (ajout `face_sa_moins`).
+
+### Reproductibilité sur Kaggle
+
+`r0_gbm` : boosting installé réentraîné sur Kaggle (1356 s pour les deux directions en parallèle).
+- Prédictions faites sur Kaggle : directe 0.085825 (égale), inverse 0.082784 au lieu de 0.082774.
+  Le `validation_inverse/` de Kaggle est reconstruit à partir de `y.csv` : la dernière heure,
+  partielle, de power_init diffère, ce qui change le recalage.
+- Mêmes modèles re-prédits en local : écart max 4.4e-16 avec `p2_planning_ema`, mêmes RMSE.
+  **L'entraînement sur Kaggle reproduit le boosting installé.**
+- Protocole retenu : entraînement sur Kaggle, téléchargement des modèles (`"compresser": true` pour
+  limiter la taille), re-prédiction locale (`valider.py --sans-entrainement`, environ 40 s). Les
+  prédictions Kaggle sont gardées dans `pred_kaggle.csv`. Référence du boosting : `p2_planning_ema`.
+- Le téléchargement des pickles non compressés (150 Mo par direction) dépassait les 600 s de
+  `lancer_kaggle.py` : délai porté à 3600 s pour `kernels output`.
+
+## Expériences du boosting
+
+Mode de travail : chaque variante d'une même vague part du même état accepté et ne change qu'une
+chose. Les variantes gardées sont ensuite réunies, et la réunion est mesurée à son tour.
+
+Code ajouté dans `baselines/gbm_sacs.py` (toutes les options sont désactivées par défaut, le boosting
+installé ne change pas) :
+- `familles_variante` (E1) : `commandes.famille_variante` dans `dmopfam_*` et `plan_*`. Vocabulaire :
+  ≥ 50 occurrences dans une période d'entraînement, union des périodes. `MOCS.n` reste groupé en `MOCS`
+  dans le planning ;
+- `retirer` (E2, E17) : expressions régulières de colonnes écartées ; `LETTRES` = les 10 comptes exacts ;
+- `plan` (E3–E6) : options de `apprendre_planning` : `changements`, `recence: "debut"`, `prefixes`,
+  `paires: "liste"` ;
+- `contexte` (E7–E9) : `soleil: "mesures" | "interpole"`, `ltdata: "lineaire"` (`dio/contexte.py`) ;
+- ajouts `geometrie`, `altitude`, `ombres`, `contacts` (E10–E13), `decalages`, `histoires` (E14, E15) ;
+- réglage `D` (E18) : celui du point 8, avec arrêt anticipé.
+
+### Analyses préalables (sans entraînement)
+
+- **Contacts stations (E13).** Les AOS/LOS portent un seuil d'élévation (`_00` à `_11`). Seul `_10`
+  existe pour toutes les stations dans les deux années : c'est lui qui est apparié. L'union vaut 1 sur
+  plus de 99.5 % des heures (au moins une station voit toujours la sonde) : le filtre des variables
+  quasi constantes l'écarte. La somme par station (0 à 7) reste.
+- **Ombres des lunes et occultations (E12).** Les intervalles PHO_/DEI_UMBRA, PENUMBRA et OCC_PHOBOS,
+  OCC_DEIMOS sont nuls sur plus de 99.5 % des heures : le filtre les écarte tous. La fraction
+  OCC_MARS est égale, au facteur 60 près, à `evtf_OCC_MARS_minutes` déjà présent (écart max 7e-15).
+  Le HGB découpe les variables par quantiles : il est insensible à ce facteur. Avec le filtre, E12 ne
+  change donc rien, et il n'est pas lancé seul. Il reste testé dans la recette complète (E22), avec le
+  test sans filtre (E20). Pairage : un DEI_UMBRA_END rangé avant son START au même instant ouvrait un
+  faux intervalle de plusieurs mois. Les paires de plus de 6 h (ombres) ou 24 h (contacts) sont écartées.
 - **Flux par face (E16).** `(constante/600) × max(±cos, 0) × clip(1 − umbra − 0.5 pénombre, 0, 1)` est
   exactement `flux_*_eclaire` divisé par 600 : même découpage, mêmes arbres. Seule nouveauté : la face
   sa− (cos sa < 0), soit 0.2 % des mesures en annee1 et 0.7 % en annee2. Écartée elle aussi par le
@@ -165,3 +222,15 @@ Lancée sur Kaggle. Incident : dans la première soumission, l'expression `retir
 été échappée deux fois dans le JSON (`\\\\w`) et ne retirait rien. Ces deux runs sont donc des doublons
 de la référence et d'E1 : ils sont ignorés, et E2 est relancé avec `\\w` (vérifié : 10 colonnes retirées).
 E3 à E6 ne sont pas touchés.
+
+### E22 — recette complète, lancée sans attendre les essais isolés (demande de l'utilisateur)
+
+Hypothèse : les ingrédients des points 2 à 8 peuvent ne servir qu'ensemble (E1 seul ne gagne pas).
+Run `e22a_recette` : familles corrigées, sans comptes par lettre ni colonnes distance Terre et angle
+Soleil–Mars–Terre ; planning avec changements de variante, récence au début de l'heure (720 h, log1p),
+préfixes, paires de la liste ; soleil « interpole » (moyenne des cosinus, interpolation, écart-type de
+sa), ltdata linéaire ; géométrie exacte, altitude, ombres, contacts ; décalages ±1–3 h, historiques
+ciblés, face sa− ; EMA gardées ; réglage D (arrêt anticipé), embargo 0, sans filtre de fréquence.
+`e22b_recette_sans_ema` : idem sans les EMA. Recalage sur power_init : mesuré avec et sans, à la
+prédiction (local). Session Kaggle CPU (fente 3) : les deux fentes GPU étaient prises, et le boosting
+n'utilise pas le GPU (accord de l'utilisateur).
