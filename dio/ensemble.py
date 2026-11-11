@@ -27,7 +27,9 @@ from baselines import gbm_sacs, marqueurs
 from . import donnees, mixte, recette
 
 POIDS_GBM = 0.3
-GBM_DEFAUT = {"config": "B", "jeu": "V2", "ajouts": ["planning", "ema"], "compresser": True}
+PART_RECETTE = 0.3  # part du GRU recette dans la part GRU
+# Recette R (docs/JOURNAL_RECETTE.md, E22b) : options de baselines/gbm_sacs.entrainer.
+GBM_DEFAUT = {"config": "D", "jeu": "V2", "compresser": True, "familles_variante": True, "plan": {"changements": True, "recence": "debut", "prefixes": True, "paires": "liste"}, "contexte": {"soleil": "interpole", "ltdata": "lineaire"}, "ajouts": ["planning", "ema", "geometrie", "altitude", "ombres", "contacts", "decalages", "histoires", "face_sa_moins"], "embargo_h": 0, "filtre": False, "retirer": ["lettres", "distance_terre", "ema"]}
 # World model du spécialiste de NPWD2532 : configuration de l'essai H1a (docs/RESULTATS.md).
 PHYSIQUE = {"physique": True, "familles": False, "facteur_niveau_prediction": 1.0}
 RECETTE = {"reinjection": False}
@@ -35,7 +37,7 @@ SPECIALISTES = {"NPWD2532": {"gbm": 0.6, "physique": 0.4}, "NPWD2531": {"porte":
 
 
 def entrainer(annees, dossier, poids_gbm=POIDS_GBM, gbm=None, gru_depuis=None, specialistes=True,
-              physique_depuis=None, part_recette=0.0, recette_depuis=None, **options):
+              physique_depuis=None, part_recette=PART_RECETTE, recette_depuis=None, **options):
     """gru_depuis : dossier d'un gru_mixte déjà entraîné sur les mêmes années avec les mêmes options,
     copié au lieu d'être réentraîné (sur CPU, le GRU coûte des heures, le boosting quelques minutes).
     physique_depuis : idem pour le world model physique du spécialiste de NPWD2532 ; recette_depuis : idem
@@ -53,7 +55,8 @@ def entrainer(annees, dossier, poids_gbm=POIDS_GBM, gbm=None, gru_depuis=None, s
     if part_recette:
         if recette_depuis:
             (dossier / "recette").mkdir(parents=True, exist_ok=True)
-            shutil.copy(Path(recette_depuis) / "recette.pt", dossier / "recette" / "recette.pt")
+            if Path(recette_depuis).resolve() != (dossier / "recette").resolve():
+                shutil.copy(Path(recette_depuis) / "recette.pt", dossier / "recette" / "recette.pt")
         else:
             recette.entrainer(annees, dossier / "recette", **RECETTE)
     (dossier / "ensemble.json").write_text(json.dumps({"poids_gbm": poids_gbm, "part_recette": part_recette},

@@ -159,8 +159,9 @@ def familles_planning(dmop, planning):
 def periodes_actives(dmop, heures, debut, fin):
     """Part de chaque heure couverte par un intervalle debut.n … fin.n (même numéro)."""
     numero = dmop.subsystem.str.extract(r"^([A-Z]{4})\.(\d+)$")
-    debuts = dmop[numero[0] == debut].assign(n=numero[1]).groupby("n").ut_ms.min()
-    fins = dmop[numero[0] == fin].assign(n=numero[1]).groupby("n").ut_ms.max()
+    # .loc sur les mêmes lignes : un assign sur une sélection vide réalignerait sur toute la table (NaN).
+    debuts = dmop.ut_ms[numero[0] == debut].groupby(numero.loc[numero[0] == debut, 1]).min()
+    fins = dmop.ut_ms[numero[0] == fin].groupby(numero.loc[numero[0] == fin, 1]).max()
     paires = pd.concat([debuts, fins], axis=1, join="inner").to_numpy(dtype=np.int64)
     sortie = np.zeros(len(heures))
     if len(paires):

@@ -59,6 +59,16 @@ class EnsembleTest(unittest.TestCase):
         np.testing.assert_allclose(seul, (1 - w) * gru + w * gbm, atol=1e-9)
         self.assertGreater(np.abs(gru - gbm).to_numpy().max(), 1e-3)
 
+    @unittest.skipUnless(json.loads((POIDS / "ensemble.json").read_text()).get("part_recette") if EST_ENSEMBLE else False,
+                         "pas de GRU recette")
+    def test_part_gru_melange_mixte_et_recette(self):
+        a = json.loads((POIDS / "ensemble.json").read_text())["part_recette"]
+        gru = predire(TEST, self.temp.name, poids_gbm=0).set_index("ut_ms")
+        mixte = predire(TEST, self.temp.name, poids_gbm=0, part_recette=0).set_index("ut_ms")
+        recette = predire(TEST, self.temp.name, poids_gbm=0, part_recette=1).set_index("ut_ms")
+        np.testing.assert_allclose(gru, (1 - a) * mixte + a * recette, atol=1e-9)
+        self.assertGreater(np.abs(mixte - recette).to_numpy().max(), 1e-3)
+
     @unittest.skipUnless((POIDS / "specialiste" / "specialistes.json").is_file(), "pas de spécialistes")
     def test_specialistes_ne_changent_que_leurs_colonnes(self):
         seul = predire(TEST, self.temp.name, specialistes=False).set_index("ut_ms")

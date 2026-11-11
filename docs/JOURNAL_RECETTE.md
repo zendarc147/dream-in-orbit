@@ -400,3 +400,61 @@ Référence : `e22b_recette_sans_ema` (0.078891). « Δ » : effet du **retrait*
 | avec comptes par lettre | 0.077800 | 0.080969 | 0.078894 | +0.000003 | sans effet |
 | sans altitude | 0.077760 | 0.080934 | 0.078887 | −0.000004 | retrait permis par la règle (b), gain négligeable |
 | récence en fin d'heure, 168 h | 0.077604 | 0.081270 | 0.078932 | +0.000042 | la convention de début d'heure aide (inverse) |
+
+### Ablations depuis R — sessions 3 et 4
+
+| Ablation (retrait depuis R) | Seul dir. | Seul inv. | Moy. 4 | Δ (positif = l'ingrédient aide) |
+|---|---:|---:|---:|---:|
+| sans géométrie exacte (péricentres) | 0.084299 | 0.080830 | 0.079671 | **+0.000780** |
+| sans décalages ±1–3 h | 0.080052 | 0.082614 | 0.079221 | **+0.000330** |
+| avec distance Terre et angle SMT | 0.082342 | 0.080962 | 0.079080 | **+0.000189** |
+| réglage B au lieu de D | 0.078320 | 0.081313 | 0.079023 | +0.000133 |
+| sans préfixes | 0.078075 | 0.081083 | 0.079018 | +0.000127 |
+| récence en fin d'heure (session 5) | 0.077604 | 0.081270 | 0.078932 | +0.000042 |
+| sans changements de variante | 0.077448 | 0.081278 | 0.078924 | +0.000033 |
+| sans ombres ni contacts | 0.077819 | 0.080984 | 0.078903 | +0.000013 |
+| cosinus de l'angle moyen (session 5) | 0.078619 | 0.080826 | 0.078904 | +0.000013 |
+| ltdata répété par jour | 0.077806 | 0.080928 | 0.078902 | +0.000011 |
+| paires apprises | 0.077775 | 0.080954 | 0.078891 | 0 (identique) |
+| avec filtre de fréquence (session 5) | 0.077775 | 0.080954 | 0.078891 | 0 (identique) |
+| embargo 168 h | 0.077387 | 0.081095 | 0.078862 | −0.000029 |
+| familles anciennes | 0.077790 | 0.080667 | 0.078836 | −0.000055 |
+| sans historiques ciblés | 0.077374 | 0.081062 | 0.078804 | −0.000087 |
+
+- Le gain de R vient surtout de la géométrie exacte, des décalages, du retrait de la distance Terre et
+  de l'angle Soleil–Mars–Terre, du réglage D et des préfixes. Isolés depuis l'ancien état, la
+  géométrie et les décalages ne gagnaient presque rien (E10 −0.00005, E14 −0.00007) : ils ne servent
+  qu'avec le reste.
+- Aucun retrait ne passe la règle : les trois retraits négatifs (historiques, familles anciennes,
+  embargo 168 h) restent sous 0.0003 sur le mélange, et chacun dégrade une direction du GBM seul.
+  **R reste l'état accepté.**
+- Dans R, les familles corrigées n'aident pas (−0.000055 si on revient aux anciennes). Le point 2
+  reste appliqué tel que demandé : la règle de famille est plus juste, et l'écart reste sous la règle.
+
+## Installation (12 nov.)
+
+- `poids/gbm/gbm_sacs.pkl.xz` : GBM R entraîné sur annee1 + annee2 (Kaggle, `runs/final_gbm_R`, 28 Mo).
+- `poids/recette/recette.pt` : GRU recette sans réinjection, 5 graines, annee1 + annee2 (Kaggle T4,
+  `runs/final_recette_g2`, 1.6 Mo).
+- `poids/ensemble.json` : `{"poids_gbm": 0.3, "part_recette": 0.3}`. GRU mixte et spécialistes inchangés.
+- `dio/ensemble.py` : `GBM_DEFAUT` = recette R, `PART_RECETTE` = 0.3 ; `python train.py` reproduit le
+  modèle installé (GBM et GRU recette réentraînés, GRU mixte et spécialiste physique repris de
+  `poids/` par `modele.json`).
+- Anciens poids : `runs/poids_avant_recette/` et commit `0d4dcab`.
+- `tests/test_ensemble.py` (5 tests, dont la part GRU = 0.7 mixte + 0.3 recette) : OK sur les poids
+  installés. Prédiction complète : environ 2 min sur CPU (contre environ 55 s), à cause du calcul du
+  planning et des variables de contexte du GBM.
+- Correction : `periodes_actives` produisait des NaN convertis en entiers quand une paire était
+  absente du test (UDBS en annee1). La colonne valait quand même 0, et les prédictions sont
+  identiques après correction (écart 0).
+
+## Bilan
+
+| Modèle (validation du dépôt) | Moy. 4 sans spécialistes | Graines 0–4 avec spécialistes | Graines 5–9 avec spécialistes |
+|---|---:|---:|---:|
+| Livré avant ce programme | 0.079555 | 0.077930 | 0.078015 |
+| GBM R seul changé | 0.078891 | | |
+| **GBM R + GRU recette (part 0.3) — installé** | **0.07830** | **0.077024** | **0.077063** |
+
+GBM seul : 0.085825 / 0.082774 → 0.077775 / 0.080954. Il bat maintenant le GRU seul dans les deux
+directions (0.079062 / 0.083579).

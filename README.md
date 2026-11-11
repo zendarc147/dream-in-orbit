@@ -20,7 +20,8 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + régularisations de robustesse (masquage SAAF par blocs, abandon groupé des états de commandes) | 0.0826 | 0.0885 | 0.0855 |
 | + familles de commandes dmop en entrée du GRU + correction de niveau × 1.5 à la prédiction | 0.0791 | 0.0836 | 0.0813 |
 | + mélange avec un boosting à sacs temporels enrichi (commandes planifiées, moyennes exponentielles), poids 0.3 | 0.0780 | 0.0810 | 0.0795 |
-| **+ spécialistes : porte de régime par marqueurs pour NPWD2531, boosting + GRU physique pour NPWD2532, modèle final** | **0.0767** | **0.0791** | **0.0779** |
+| + spécialistes : porte de régime par marqueurs pour NPWD2531, boosting + GRU physique pour NPWD2532 | 0.0767 | 0.0791 | 0.0779 |
+| **+ boosting « recette » (familles corrigées, événements de commande, géométrie exacte, décalages, réglage avec arrêt anticipé) et GRU recette à 0.3 dans la part GRU, modèle final** | **0.0753** | **0.0787** | **0.0770** |
 
 Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
 Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
@@ -45,6 +46,12 @@ l'entraînement : ATMB045, SCMN, ATTTF420) ; ailleurs, il prend son niveau médi
 power_init, au lieu du faux palier qu'apprend un modèle en moyenne. NPWD2532 vaut 0.6 × boosting +
 0.4 × world model avec variables physiques. Les 31 autres colonnes sont inchangées. Graines 5–9 :
 0.0765 / 0.0795. Retour à l'ensemble sans spécialistes : `--options '{"specialistes": false}'`.
+
+Recette du 12 novembre (`docs/JOURNAL_RECETTE.md`) : le boosting change de variables et de réglage
+(familles de commandes sans lettre de variante, changements de variante, préfixes, péricentres aux instants
+exacts, décalages ±1–3 h, moyenne des cosinus solaires, réglage avec arrêt anticipé, embargo nul). Seul, il passe
+de 0.0858 / 0.0828 à 0.0778 / 0.0810 et bat le GRU seul. Un second GRU, plus petit et sans retour des sorties
+(`dio/recette.py`), prend 30 % de la part GRU. Graines 5–9 : 0.0752 / 0.0789.
 
 Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).

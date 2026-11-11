@@ -5,6 +5,8 @@
     "annee2"
   ],
   "options": {
-    "gru_depuis": "poids"
+    "gru_depuis": "poids",
+    "physique_depuis": "poids/specialiste/physique",
+    "recette_depuis": "poids/recette"
   }
 }
