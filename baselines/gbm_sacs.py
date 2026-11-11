@@ -18,8 +18,13 @@ Ajouts optionnels (ablations de la phase 2, docs/JOURNAL_ENSEMBLE.md) :
 - historique : moyennes passées 6/24/72/168 h du flux solaire, de l'ombre, des modes de
   pointage ftl et des communications ;
 - ema : moyennes exponentielles (constantes de temps 3/12/48/168 h) des mêmes séries ;
+- orbite : harmoniques 2 à 4 de la phase orbitale et moyennes exponentielles longues
+  (336 et 720 h) du flux éclairé par face et de l'ombre (inertie thermique lente) ;
 - sans_horloge : retire les distances et angles ltdata, lents et quasi monotones sur une
   année, qui servent d'horloge indirecte.
+Options des spécialistes (docs/JOURNAL_SPECIALISTES.md) : circuits (n'apprendre que
+certaines colonnes) et lissage_cible (moyenne glissante centrée de la cible, à l'entraînement
+seulement : débruite le cycle des thermostats, la prédiction reste horaire).
 Les variables quasi constantes sur l'entraînement sont écartées (même règle que monde.py).
 power_init ne sert qu'au recalage du niveau, à la prédiction (boosting.recaler).
 """
@@ -43,6 +48,8 @@ H = donnees.H
 HORLOGE = ["ltdata_sunmars_km", "ltdata_earthmars_km", "ltdata_sunmarsearthangle_deg", "ltdata_solarconstantmars"]
 FENETRES_HISTOIRE = (6, 24, 72, 168)
 CONSTANTES_EMA = (3, 12, 48, 168)
+CONSTANTES_LENTES = (336, 720)
+HARMONIQUES_ORBITE = (2, 3, 4)
 PLAFOND_RECENCE_H = 168
 DUREE_MAX_PERIODE = 7 * 24 * H
 
@@ -130,14 +137,26 @@ def historique(x, existantes):
     return pd.DataFrame(sortie, index=x.index)
 
 
-def moyennes_exponentielles(x):
+def moyennes_exponentielles(x, constantes=CONSTANTES_EMA, filtre=None):
     """y_t = a x_t + (1 - a) y_(t-1), a = 1 - exp(-1/tau), y_0 = x_0 : causale."""
     sortie = {}
     for nom, serie in series_contexte(x).items():
-        for tau in CONSTANTES_EMA:
+        if filtre and not filtre(nom):
+            continue
+        for tau in constantes:
             a = 1 - np.exp(-1 / tau)
             sortie[f"{nom}_ema{tau}h"] = lfilter([a], [1, a - 1], serie, zi=[(1 - a) * serie[0]])[0]
     return pd.DataFrame(sortie, index=x.index)
+
+
+def orbite(x, table):
+    """Harmoniques de la phase orbitale (péricentre = 0) et inertie thermique lente par face."""
+    phase = np.arctan2(table["orbite_phase_sin"].to_numpy(), table["orbite_phase_cos"].to_numpy())
+    sortie = {}
+    for k in HARMONIQUES_ORBITE:
+        sortie[f"orbite_phase_cos{k}"], sortie[f"orbite_phase_sin{k}"] = np.cos(k * phase), np.sin(k * phase)
+    lentes = moyennes_exponentielles(x, CONSTANTES_LENTES, lambda nom: nom == "ombre" or nom.endswith("_eclaire"))
+    return pd.concat([pd.DataFrame(sortie, index=x.index), lentes], axis=1)
 
 
 def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge=False):
@@ -146,7 +165,7 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
         return x.copy()
     if jeu not in ("V1", "V2"):
         raise ValueError(f"Jeu de variables inconnu : {jeu}")
-    inconnus = set(ajouts) - {"planning", "historique", "ema"}
+    inconnus = set(ajouts) - {"planning", "historique", "ema", "orbite"}
     if inconnus:
         raise ValueError(f"Ajouts inconnus : {sorted(inconnus)}")
     table = variables.ajouter_v2r(x)
@@ -160,6 +179,8 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
         blocs.append(historique(x, set(table.columns)))
     if "ema" in ajouts:
         blocs.append(moyennes_exponentielles(x))
+    if "orbite" in ajouts:
+        blocs.append(orbite(x, table))
     table = pd.concat(blocs, axis=1)
     if sans_horloge:
         table = table.drop(columns=HORLOGE)
@@ -188,9 +209,13 @@ def _ajuster(f, y, lignes, config, graine):
 
 
 def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filtre=True, graine=0,
-              ajouts=(), sans_horloge=False, compresser=False):
-    """compresser : gbm_sacs.pkl.xz (lzma, environ 8 fois plus petit, 2 min de plus à l'écriture)."""
+              ajouts=(), sans_horloge=False, compresser=False, circuits=None, lissage_cible=0):
+    """compresser : gbm_sacs.pkl.xz (lzma, environ 8 fois plus petit, 2 min de plus à l'écriture).
+    circuits : colonnes apprises (toutes par défaut) ; lissage_cible : fenêtre en heures de la moyenne
+    centrée appliquée aux cibles de chaque année (0 : cibles horaires brutes)."""
     schema = donnees.charger_schema()
+    noms = list(circuits or schema["target_columns"])
+    indices = [schema["target_columns"].index(c) for c in noms]
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
     familles = variables.apprendre_familles(list(tables.values())) if jeu == "V2" else []
     planning = apprendre_planning(list(tables.values())) if "planning" in ajouts else None
@@ -199,7 +224,10 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
         h, x, y = donnees.charger_annee(annee, schema)
         heures.append(h)
         blocs.append(construire(x, tables[annee], jeu, familles, ajouts, planning, sans_horloge))
-        ys.append(y)
+        y = pd.DataFrame(y[:, indices])
+        if lissage_cible:
+            y = y.rolling(lissage_cible, center=True, min_periods=1).mean().where(y.notna())
+        ys.append(y.to_numpy())
     heures, table, y = np.concatenate(heures), pd.concat(blocs), np.concatenate(ys)
     colonnes, f = list(table.columns), table.to_numpy(dtype=np.float64)
     if filtre:
@@ -219,11 +247,11 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
         for sac, (_, bloc) in zip(modeles, decoupe):
             hors_sac[bloc] = np.stack([m.predict(f[bloc]) for m in sac], axis=1)
         pd.DataFrame(hors_sac, index=pd.Index(heures, name="ut_ms"),
-                     columns=schema["target_columns"]).to_csv(dossier / "hors_sac.csv")
+                     columns=noms).to_csv(dossier / "hors_sac.csv")
     with (lzma.open(dossier / "gbm_sacs.pkl.xz", "wb") if compresser else open(dossier / "gbm_sacs.pkl", "wb")) as fichier:
         pickle.dump({"config": config, "jeu": jeu, "colonnes": colonnes, "familles": familles,
                      "ajouts": list(ajouts), "planning": planning, "sans_horloge": sans_horloge,
-                     "circuits": schema["target_columns"], "annees": list(annees), "modeles": modeles}, fichier)
+                     "circuits": noms, "lissage_cible": lissage_cible, "annees": list(annees), "modeles": modeles}, fichier)
     print(f"{len(modeles)} sac(s) × {n_circuits} boostings ({config}, {jeu}, {len(colonnes)} variables)"
           f" entraînés sur {', '.join(annees)}")
 
@@ -237,6 +265,7 @@ def predire(test_dir, out, dossier, recalage=1.0, demi_vie=1440):
                        paquet.get("planning"), paquet.get("sans_horloge", False))
     f = table[paquet["colonnes"]].to_numpy(dtype=np.float64)
     prediction = np.mean([[m.predict(f) for m in sac] for sac in paquet["modeles"]], axis=0).T
-    prediction = recaler(prediction, test["y_init"], test["n_init"], recalage, demi_vie)
+    indices = [donnees.charger_schema()["target_columns"].index(c) for c in paquet["circuits"]]
+    prediction = recaler(prediction, test["y_init"][:, indices], test["n_init"], recalage, demi_vie)
     return donnees.ecrire_predictions(test["heures"], np.clip(prediction, 0, None), test["heures_a_predire"],
                                       paquet["circuits"], out)

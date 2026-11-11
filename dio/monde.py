@@ -56,6 +56,8 @@ CONFIG_DEFAUT = {
     "curriculum_jours": None,  # ex. [180, 365, 540] : jours_sim par parts égales des pas (None : jours_sim)
     "physique": False,       # + flux solaire par face, ombre et moyennes passées 6/24/72 h (variables.physiques)
     "familles": True,        # + comptes horaires par famille de commande dmop, vocabulaire appris à l'entraînement
+    "poids_circuits": None,  # ex. {"NPWD2551": 4} : poids de ces circuits dans la MSE (moyenne des poids ramenée à 1)
+    "lissage_cible": None,   # ex. {"NPWD2551": 3} : moyenne centrée de la cible sur N heures, entraînement seul
     "exclure": None,         # [début, fin) en fractions de chaque période, retiré avec 7 jours de marge (hors bloc)
     "taille": 128,
     "couches": 2,
@@ -358,6 +360,16 @@ def construire_variables(x, config, dmop, voc_commandes):
                                 config.get("physique", False), config.get("_familles"))
 
 
+def lisser(y, circuits, fenetres):
+    """Moyenne glissante centrée de certaines colonnes ; les heures sans vérité restent NaN."""
+    y = y.copy()
+    for c, w in fenetres.items():
+        j = circuits.index(c)
+        colonne = pd.Series(y[:, j])
+        y[:, j] = colonne.rolling(int(w), center=True, min_periods=1).mean().where(colonne.notna()).to_numpy()
+    return y
+
+
 def preparer_annees(annees, config):
     schema = donnees.charger_schema()
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
@@ -444,6 +456,8 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
         y_init = torch.as_tensor(normaliser_courants(y[:, :ti], stats["y_moyenne"], stats["y_ecart"]),
                                  dtype=torch.float32, device=appareil)
         cible = torch.as_tensor(y[:, ti:], dtype=torch.float32, device=appareil)
+        poids_c = torch.as_tensor(config.get("_poids_circuits") or np.ones(n_circuits), dtype=torch.float32,
+                                  device=appareil).expand_as(cible)
         h = None
         for a in range(0, sim, morceau):
             if pas >= config["pas"]:
@@ -458,7 +472,7 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
             masque = torch.isfinite(c)
             if not masque.any():
                 continue
-            perte = ((sortie - torch.nan_to_num(c)) ** 2)[masque].mean()
+            perte = (((sortie - torch.nan_to_num(c)) ** 2) * poids_c[:, a:a + morceau])[masque].mean()
             if regime and config["lambda_regime"]:
                 perte = perte + config["lambda_regime"] * perte_regime(
                     logits, c[..., regime["circuits"]], seuils, poids_classes)
@@ -510,7 +524,16 @@ def entrainer(annees, dossier, **options):
         config["_regime"] = {"circuits": cibles, "k": config["regime_k"]}
         # Statistiques sérialisées, apprises sur les périodes d'entraînement originales seulement.
         stats.update(stats_regime(y_tout, cibles, config["regime_k"]))
+    if config.get("poids_circuits"):
+        poids = np.ones(len(schema["target_columns"]))
+        for c, w in config["poids_circuits"].items():
+            poids[schema["target_columns"].index(c)] = w
+        config["_poids_circuits"] = (poids / poids.mean()).tolist()
     periodes = periodes + copies
+    if config.get("lissage_cible"):
+        # Débruite le cycle des thermostats : le simulateur apprend la consommation moyenne attendue.
+        # power_init de l'encodeur est lissé aussi (seule sa moyenne sur 7 jours compte vraiment).
+        periodes = [(f, lisser(y, schema["target_columns"], config["lissage_cible"])) for f, y in periodes]
     dossier = Path(dossier)
     dossier.mkdir(parents=True, exist_ok=True)
     n_circuits = len(schema["target_columns"])

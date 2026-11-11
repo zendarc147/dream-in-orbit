@@ -4,7 +4,7 @@ Un réseau de neurones récurrent apprend comment le satellite réagit à son pl
 (commandes dmop, dont les commandes AOOO et ATTT, modes de pointage ftl) et à son contexte (Soleil saaf, événements evtf,
 tendances ltdata), puis simule seul ses 33 circuits heure par heure sur toute une période,
 à partir de ses 7 premiers jours réels (`power_init.csv`). Sujet : [`docs/sujet.md`](docs/sujet.md).
-Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Ablations : [`docs/ABLATIONS.md`](docs/ABLATIONS.md). Ensemble GRU + boosting : [`docs/JOURNAL_ENSEMBLE.md`](docs/JOURNAL_ENSEMBLE.md).
+Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Ablations : [`docs/ABLATIONS.md`](docs/ABLATIONS.md). Ensemble GRU + boosting : [`docs/JOURNAL_ENSEMBLE.md`](docs/JOURNAL_ENSEMBLE.md). Spécialistes NPWD2551 / NPWD2451 (plafond, essais non retenus) : [`docs/JOURNAL_SPECIALISTES.md`](docs/JOURNAL_SPECIALISTES.md).
 
 ## Résultats (RMSE, `evaluate.py`)
 

@@ -719,3 +719,12 @@ identique à Kaggle ; en inverse, `power_init` local suit la procédure officiel
   (graines 0–4) et 0.077769 / 0.081435 (graines 5–9), contre 0.079062 / 0.083579 et 0.078719 /
   0.084229 pour le GRU seul. Installé dans `poids/` (modèle `gru_gbm`) ; poids +16 Mo,
   prédiction 18 s et 1.4 Go.
+
+## Spécialistes NPWD2551 / NPWD2451 — 11 novembre 2026
+
+Détail : `docs/JOURNAL_SPECIALISTES.md`. Avec ces deux circuits parfaits, le RMSE de validation
+passerait de 0.0795 à 0.0560 (−30 %, pas −50 %). Ce sont des thermostats tout-ou-rien avec des
+cycles de 5 à 20 min : leur moyenne horaire dépend d'une phase que rien dans les entrées ne donne.
+Leviers testés : boosting spécialiste (orbite, réglage A, cible lissée), GRU pondéré ×4 avec ou sans
+cible lissée (T4 Kaggle), 10 graines, mélange par colonne avec poids transférés d'une direction à
+l'autre. Le seul mélange accepté gagne −0.00012 au total : non installé, `poids/` est inchangé.

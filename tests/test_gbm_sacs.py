@@ -108,6 +108,14 @@ class TestDonneesReelles(unittest.TestCase):
         np.testing.assert_array_equal(f[:, :len(noms_base)], base)
 
     @unittest.skipUnless(VALIDATION.is_dir(), "validation/ absent (make_validation.py)")
+    def test_lissage_cible_garde_les_trous_et_les_autres_colonnes(self):
+        from dio import monde
+        y = np.array([[0., 1.], [3., 1.], [np.nan, 1.], [6., 1.], [0., 1.]])
+        lisse = monde.lisser(y, ["A", "B"], {"A": 3})
+        np.testing.assert_allclose(lisse[:, 0], [1.5, 1.5, np.nan, 3., 3.])  # centré, NaN ignorés puis remis
+        np.testing.assert_array_equal(lisse[:, 1], y[:, 1])
+        self.assertEqual(y[1, 0], 3.)  # entrée intacte
+
     def test_power_init_n_entre_pas_dans_les_variables(self):
         with tempfile.TemporaryDirectory() as temp:
             copie = Path(temp) / "test"
