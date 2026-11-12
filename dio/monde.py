@@ -26,6 +26,7 @@ import json
 import math
 import multiprocessing
 import os
+import re
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -56,6 +57,8 @@ CONFIG_DEFAUT = {
     "curriculum_jours": None,  # ex. [180, 365, 540] : jours_sim par parts égales des pas (None : jours_sim)
     "physique": False,       # + flux solaire par face, ombre et moyennes passées 6/24/72 h (variables.physiques)
     "familles": True,        # + comptes horaires par famille de commande dmop, vocabulaire appris à l'entraînement
+    "familles_variante": False,  # familles commandes.famille_variante (≥ 50 fois par période) au lieu de commandes.famille
+    "retirer": [],           # expressions régulières des variables écartées (ex. comptes exacts avec lettre)
     "poids_circuits": None,  # ex. {"NPWD2551": 4} : poids de ces circuits dans la MSE (moyenne des poids ramenée à 1)
     "lissage_cible": None,   # ex. {"NPWD2551": 3} : moyenne centrée de la cible sur N heures, entraînement seul
     "exclure": None,         # [début, fin) en fractions de chaque période, retiré avec 7 jours de marge (hors bloc)
@@ -356,8 +359,15 @@ def exclure_bloc(bloc, debut, fin, marge=168):
 
 
 def construire_variables(x, config, dmop, voc_commandes):
-    return variables.construire(x, config["variables"], config["sans"], dmop, voc_commandes,
-                                config.get("physique", False), config.get("_familles"))
+    valeurs, noms = variables.construire(x, config["variables"], config["sans"], dmop, voc_commandes,
+                                         config.get("physique", False), config.get("_familles"),
+                                         config.get("familles_variante", False))
+    if config.get("retirer"):
+        # Colonnes écartées par expression régulière (ex. comptes exacts avec lettre de variante).
+        retirer = re.compile("|".join(config["retirer"]))
+        garder = [not retirer.fullmatch(n) for n in noms]
+        valeurs, noms = valeurs[:, garder], [n for n, g in zip(noms, garder) if g]
+    return valeurs, noms
 
 
 def lisser(y, circuits, fenetres):
@@ -393,7 +403,8 @@ def preparer_annees(annees, config):
         voc_commandes = commandes.apprendre([(dmop, heures, y) for heures, _, y, dmop in blocs],
                                             schema["target_columns"], config["commandes"])
     if config.get("familles"):
-        config["_familles"] = variables.apprendre_familles([dmop for *_, dmop in blocs])
+        config["_familles"] = variables.apprendre_familles([dmop for *_, dmop in blocs],
+                                                           config.get("familles_variante", False))
     periodes, copies = [], []
     for i, (_, x, y, dmop) in enumerate(blocs):
         f, noms = construire_variables(x, config, dmop, voc_commandes)

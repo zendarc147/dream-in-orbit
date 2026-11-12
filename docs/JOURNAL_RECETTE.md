@@ -488,3 +488,20 @@ du gain). 0.6 n'apporte rien de plus (plateau, directe en hausse). 0.5 laisse au
 aux réseaux de neurones (0.35 GRU mixte + 0.15 GRU recette), la borne que le projet s'était fixée.
 Limite : le poids est choisi sur les deux validations elles-mêmes, ce qui laisse un léger optimisme.
 L'ancien test du passage de 0.3 à 0.5 (dégradation) portait sur l'ancien GBM, plus faible que le GRU.
+
+## Point 3 sur le GRU principal (12 nov.)
+
+Hypothèse : le GRU mixte installé consomme encore 66 impulsions et états par commande exacte
+AOOO/ATTT (branche vers NPWD2881), les 10 comptes exacts de prepare.py et les familles
+`commandes.famille`. Une lettre peut changer de sens d'une année à l'autre ; retirer ces colonnes et
+corriger les familles pourrait mieux généraliser.
+Modification (une seule expérience, celle du point 3) : options du GRU de référence +
+`"commandes": null, "branche_commandes": null, "familles_variante": true, "retirer": [comptes exacts]`
+(nouvelles options `familles_variante` et `retirer` de `dio/monde.py`, désactivées par défaut).
+Variables du membre v2r : 307 → 236 (117 familles corrigées, aucune colonne par lettre).
+Runs Kaggle T4 : `l1_gru_sans_lettres_g04` (fente 1) et `l1_gru_sans_lettres_g59` (fente 2). Comparaison
+avec `p1_gru_g04` / `p1_gru_g59`, seul et dans le mélange installé.
+
+Incident : une boucle d'attente `while kill -0 $(pgrep -f "unittest tests.test_ensemble")` se trouvait
+elle-même et a tourné 11 h, jusqu'à ce que l'utilisateur la signale. Arrêtée ; les attentes passent
+désormais par le PID enregistré au lancement.
