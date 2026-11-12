@@ -22,7 +22,7 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + mélange avec un boosting à sacs temporels enrichi (commandes planifiées, moyennes exponentielles), poids 0.3 | 0.0780 | 0.0810 | 0.0795 |
 | + spécialistes : porte de régime par marqueurs pour NPWD2531, boosting + GRU physique pour NPWD2532 | 0.0767 | 0.0791 | 0.0779 |
 | + boosting « recette » (familles corrigées, événements de commande, géométrie exacte, décalages, réglage avec arrêt anticipé) et GRU recette à 0.3 dans la part GRU | 0.0753 | 0.0787 | 0.0770 |
-| **+ poids du boosting 0.5 au lieu de 0.3, modèle final** | **0.0752** | **0.0786** | **0.0769** |
+| **+ poids du boosting 0.5 au lieu de 0.3 ; GRU principal sans encodages par lettre de variante, modèle final** | **0.0751** | **0.0785** | **0.0768** |
 
 Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
 Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
@@ -52,8 +52,9 @@ Recette du 12 novembre (`docs/JOURNAL_RECETTE.md`) : le boosting change de varia
 (familles de commandes sans lettre de variante, changements de variante, préfixes, péricentres aux instants
 exacts, décalages ±1–3 h, moyenne des cosinus solaires, réglage avec arrêt anticipé, embargo nul). Seul, il passe
 de 0.0858 / 0.0828 à 0.0778 / 0.0810 et bat le GRU seul. Un second GRU, plus petit et sans retour des sorties
-(`dio/recette.py`), prend 30 % de la part GRU. Le boosting passe ensuite de 0.3 à 0.5 du mélange.
-Graines 5–9 : 0.0751 / 0.0787.
+(`dio/recette.py`), prend 30 % de la part GRU. Le boosting passe ensuite de 0.3 à 0.5 du mélange. Le GRU principal
+n'utilise plus les impulsions et états par commande exacte ni les comptes avec lettre de variante (familles corrigées seulement).
+Graines 5–9 : 0.0752 / 0.0784.
 
 Démo : [`docs/demo/reve_contre_realite.png`](docs/demo/reve_contre_realite.png) (rêve contre réalité sur annee2, bande ± 2σ de
 l'ensemble, courbe de dérive).

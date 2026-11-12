@@ -13,7 +13,9 @@ sont pas reportés ici ; seules les mesures du dépôt le sont.
 - État accepté du boosting (options de `gbm_sacs.entrainer`) :
   options de `runs/e22b_recette_sans_ema/directe/modele.json` (recette R, E22b gardé ; référence de comparaison : `e22b_recette_sans_ema`).
 - Référence du boosting pour `outils/comparer_recette.py` : `ref_gbm` (voir phase 0).
-- Prochaine étape : voir la dernière section.
+- Prochaine étape : programme terminé (voir « État final ») ; pistes restantes : G3/G4 (entrées contre
+  architecture du GRU recette), spécialiste physique de NPWD2532 sans lettres, reproductibilité de
+  `python train.py` au bit près avec le nouveau GBM.
 - Runs Kaggle en cours : aucun (sinon `python outils/lancer_kaggle.py --fente N --rapatrier`).
 
 ## Protocole
@@ -524,3 +526,36 @@ Résultats (prédictions refaites en local) :
 - **Décision : non installé selon la règle.** Argument contraire, laissé à l'utilisateur : le modèle sans
   lettres a 76 colonnes de moins, ne suppose pas qu'une lettre garde le même sens d'une période à
   l'autre, et fait au moins aussi bien sur la validation. C'est plus prudent pour une année nouvelle.
+
+**Mise à jour : installé à la demande de l'utilisateur** (12 nov., malgré le critère manqué de 3e-6).
+- GRU mixte sans lettres entraîné sur annee1 + annee2 (Kaggle T4, 654 s, `runs/final_gru_sans_lettres`) :
+  2 membres × 5 graines, 268 variables pour le membre v2r, aucune colonne `dmopcmd_*` ni `dmop_<code>_count`.
+- Installé dans `poids/membre0`, `poids/membre1`. Anciens membres : `runs/poids_avant_sans_lettres/`.
+  Ses options d'entraînement sont dans `poids/modele.json` (`options_gru_mixte`).
+- Le spécialiste physique de NPWD2532 (`poids/specialiste/physique`) garde ses entrées d'origine
+  (commandes AOOO/ATTT comprises) : il n'a pas été réentraîné.
+- Performance attendue (validation, mélange installé, sans spécialistes) : 0.07778 → 0.07768.
+- Contrôle : prédiction complète du dossier `validation/` avec `poids/` en 78 s, sans erreur (RMSE
+  0.0503, optimiste : annee2 fait partie de l'entraînement).
+
+## État final (12 nov.)
+
+| Modèle (validation du dépôt) | Moy. 4 sans spécialistes |
+|---|---:|
+| Livré avant ce programme | 0.079555 |
+| + GBM R (poids 0.3) | 0.078891 |
+| + GRU recette (part 0.3) | 0.07830 |
+| + poids GBM 0.5 | 0.07778 |
+| **+ GRU principal sans lettres — installé** | **0.07768** |
+
+Avec spécialistes (`runs/fin_val_*_sp`, `predict.py` → `evaluate.py`, GRU de validation sans lettres) :
+
+| | Directe 0–4 | Inverse 0–4 | Directe 5–9 | Inverse 5–9 | Moyenne |
+|---|---:|---:|---:|---:|---:|
+| Livré avant ce programme | 0.076748 | 0.079111 | 0.076533 | 0.079497 | 0.077972 |
+| Poids GBM 0.5, GRU avec lettres | 0.075155 | 0.078585 | 0.075087 | 0.078708 | 0.076884 |
+| **Modèle installé (GRU sans lettres)** | **0.075138** | **0.078541** | **0.075170** | **0.078408** | **0.076814** |
+
+Le GRU sans lettres, avec spécialistes : trois RMSE baissent, la directe 5–9 monte de 0.00008.
+Total du programme avec spécialistes : 0.07797 → 0.07681 (−0.00116, −1.5 %).
+`tests/test_ensemble.py` sur les poids installés : 5 tests OK.
