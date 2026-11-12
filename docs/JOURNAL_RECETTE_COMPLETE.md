@@ -9,7 +9,7 @@ pas de Kaggle). Branche locale `recette-complete` (depuis `recette`), rien n'est
 
 - Branche : `recette-complete`.
 - Jobs : voir `runs/rc_lot*.sh` / `.log` / `.pid` (attente par `kill -0 PID`).
-- Statut : programme terminé, modèle livré conservé (voir « Décision finale »). Jobs restants : `rc0_gbm_R_local` (temps local de R), `rc9_gruA_mm_physiques_g59`.
+- Statut : programme terminé, modèle livré conservé (voir « Décision finale »). Aucun job en cours.
 
 ## Matériel et temps
 
@@ -304,3 +304,13 @@ uv run python outils/valider.py --nom rc6_val_g04 --sans-entrainement
 uv run python outils/valider.py --nom rc7_chrono_gruA_mm --direction chrono --modele gru_recette --options '{"variables":"S","reinjection":false,"normalisation":"minmax"}' --options-prediction '{"recalage": 1.0}'
 ```
 Tous les runs de cette session : `runs/rc*` (scores, `bilan.json`, `colonnes.json`, `iterations.json`, `train.log`).
+
+## Derniers contrôles (13 nov., 02:50)
+
+- **Entraînement de R reproduit en local** (`rc0_gbm_R_local`, seul sur la machine) : 0.077775 / 0.080954, identiques
+  au run Kaggle. Temps, même matériel : R 1284 s, GBM S 988 s (deux directions en parallèle) ; prédiction 14–20 s
+  contre 11–12 s. GRU S A : 137 s seul sur la machine.
+- GRU S borné + physiques, graines 5–9 (`rc9_gruA_mm_physiques_g59`) : 0.078559 / 0.082284, gain sur les
+  validations temporelles confirmé ; ne change pas la décision (porte chronologique).
+- `python -m unittest tests.test_caracteristiques tests.test_gbm_sacs tests.test_recette tests.test_ensemble` :
+  33 tests OK (dont l'ensemble livré sur `poids/`).
