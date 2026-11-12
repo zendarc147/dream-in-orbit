@@ -82,6 +82,17 @@ REGLAGES = {
     "D": {"max_iter": 600, "learning_rate": 0.02, "max_leaf_nodes": 15, "min_samples_leaf": 100,
           "l2_regularization": 3.0, "early_stopping": True, "validation_fraction": 0.1, "n_iter_no_change": 10,
           "tol": 1e-7},
+    # D3 et D31 : D sans la limite de 600 arbres, qui arrêtait NPWD2551 (docs/JOURNAL_2551.md) ;
+    # D31 avec des arbres plus grands.
+    "D3": {"max_iter": 3000, "learning_rate": 0.02, "max_leaf_nodes": 15, "min_samples_leaf": 100,
+           "l2_regularization": 3.0, "early_stopping": True, "validation_fraction": 0.1, "n_iter_no_change": 10,
+           "tol": 1e-7},
+    "D3L": {"max_iter": 6000, "learning_rate": 0.01, "max_leaf_nodes": 15, "min_samples_leaf": 100,
+            "l2_regularization": 3.0, "early_stopping": True, "validation_fraction": 0.1, "n_iter_no_change": 20,
+            "tol": 1e-7},
+    "D31": {"max_iter": 3000, "learning_rate": 0.02, "max_leaf_nodes": 31, "min_samples_leaf": 50,
+            "l2_regularization": 3.0, "early_stopping": True, "validation_fraction": 0.1, "n_iter_no_change": 10,
+            "tol": 1e-7},
 }
 # ET : arbres extrêmement aléatoires (comparaison de diversité, sans sacs : déjà aléatoires).
 EXTRA_TREES = {"n_estimators": 100, "min_samples_leaf": 50, "max_features": 0.3}

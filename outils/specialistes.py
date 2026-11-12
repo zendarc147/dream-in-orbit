@@ -44,6 +44,37 @@ def entrainer(nom, options, circuits):
     print(json.dumps(scores))
 
 
+def variables_empilement(p):
+    """Entrées du second étage : les 33 prédictions du premier étage, décalées de ±1 et ±2 h, et leurs
+    moyennes centrées sur 6, 24 et 168 h (le chauffage compense la chaleur des autres équipements)."""
+    blocs = [p] + [p.shift(k).add_suffix(f"_d{k}") for k in (-2, -1, 1, 2)]
+    blocs += [p.rolling(w, center=True, min_periods=1).mean().add_suffix(f"_m{w}") for w in (6, 24, 168)]
+    return pd.concat(blocs, axis=1).bfill().ffill()
+
+
+def empiler(nom, base, circuit, config, sacs):
+    """Second étage pour un circuit : boosting appris sur les prédictions hors sac du boosting R
+    (runs/BASE/DIRECTION/hors_sac.csv, année d'entraînement), appliqué à ses prédictions de test (pred.csv)."""
+    from baselines import gbm_sacs
+    from dio import donnees
+    schema = donnees.charger_schema()
+    for direction, (annee, validation) in DIRECTIONS.items():
+        hors_sac = pd.read_csv(RACINE / base / direction / "hors_sac.csv", index_col="ut_ms")
+        test = pd.read_csv(RACINE / base / direction / "pred.csv", index_col="ut_ms")[hors_sac.columns]
+        heures, _, y = donnees.charger_annee(annee, schema)
+        y = pd.Series(y[:, schema["target_columns"].index(circuit)], index=heures).reindex(hors_sac.index).to_numpy()
+        f, f_test = variables_empilement(hors_sac).to_numpy(), variables_empilement(test).to_numpy()
+        decoupe = gbm_sacs.sacs_temporels(len(f), sacs, 0)
+        modeles = [gbm_sacs._ajuster(f, y, lignes, config, k) for k, (lignes, _) in enumerate(decoupe)]
+        p = np.clip(np.mean([m.predict(f_test) for m in modeles], axis=0), 0, None)
+        dossier = RACINE / "runs" / nom / direction
+        dossier.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({circuit: p}, index=test.index).to_csv(dossier / "pred.csv")
+    scores = mesurer([RACINE / "runs" / nom], [circuit])
+    (RACINE / "runs" / nom / "scores.json").write_text(json.dumps(scores, indent=2) + "\n")
+    print(json.dumps(scores))
+
+
 def lire(run, direction, verite, colonnes):
     return pd.read_csv(Path(run) / direction / "pred.csv", index_col="ut_ms").reindex(verite.index)[colonnes]
 
@@ -122,9 +153,17 @@ def main():
     m.add_argument("--composants", nargs="+", required=True)
     m.add_argument("--circuits", nargs="+", default=CIRCUITS)
     m.add_argument("--nom", required=True)
+    s = sous.add_parser("empiler")
+    s.add_argument("--nom", required=True)
+    s.add_argument("--base", default="runs/e22b_recette_sans_ema")
+    s.add_argument("--circuit", default="NPWD2551")
+    s.add_argument("--config", default="D")
+    s.add_argument("--sacs", type=int, default=5)
     args = ap.parse_args()
     if args.action == "entrainer":
         entrainer(args.nom, json.loads(args.options), args.circuits)
+    elif args.action == "empiler":
+        empiler(args.nom, args.base, args.circuit, args.config, args.sacs)
     else:
         melanger(args.base, args.composants, args.circuits, args.nom)
 

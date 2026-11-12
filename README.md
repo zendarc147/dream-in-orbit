@@ -22,7 +22,8 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + mélange avec un boosting à sacs temporels enrichi (commandes planifiées, moyennes exponentielles), poids 0.3 | 0.0780 | 0.0810 | 0.0795 |
 | + spécialistes : porte de régime par marqueurs pour NPWD2531, boosting + GRU physique pour NPWD2532 | 0.0767 | 0.0791 | 0.0779 |
 | + boosting « recette » (familles corrigées, événements de commande, géométrie exacte, décalages, réglage avec arrêt anticipé) et GRU recette à 0.3 dans la part GRU | 0.0753 | 0.0787 | 0.0770 |
-| **+ poids du boosting 0.5 au lieu de 0.3 ; GRU principal sans encodages par lettre de variante, modèle final** | **0.0751** | **0.0785** | **0.0768** |
+| + poids du boosting 0.5 au lieu de 0.3 ; GRU principal sans encodages par lettre de variante | 0.0751 | 0.0785 | 0.0768 |
+| **+ boosting propre à NPWD2551 (D3L, variables d'orbite), modèle final** | **0.0750** | **0.0785** | **0.0767** |
 
 Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
 Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
@@ -41,11 +42,13 @@ exponentielles du flux solaire, de l'ombre, du pointage et des communications. E
 0.0787 / 0.0842, recalculés en local). Le GRU reste majoritaire et le retour au GRU seul est
 une option de prédiction. Ablations, critères et limites : `docs/JOURNAL_ENSEMBLE.md`.
 
-Deux colonnes ont un spécialiste (`poids/specialiste/`, `docs/JOURNAL_SPECIALISTES.md`).
+Trois colonnes ont un spécialiste (`poids/specialiste/`, `docs/JOURNAL_SPECIALISTES.md`, `docs/JOURNAL_2551.md`).
 NPWD2531 garde l'ensemble près des familles de commandes qui marquent ses modes (apprises sur
 l'entraînement : ATMB045, SCMN, ATTTF420) ; ailleurs, il prend son niveau médian recalé sur
 power_init, au lieu du faux palier qu'apprend un modèle en moyenne. NPWD2532 vaut 0.6 × boosting +
-0.4 × world model avec variables physiques. Les 31 autres colonnes sont inchangées. Graines 5–9 :
+0.4 × world model avec variables physiques. Pour NPWD2551, la part boosting vient d'un boosting appris
+sur ce seul circuit, plus long (taux 0.01, jusqu'à 6000 arbres) et avec les variables d'orbite :
+2551 passe de 0.2592 / 0.2063 à 0.2583 / 0.2054. Les 30 autres colonnes sont inchangées. Graines 5–9 :
 0.0765 / 0.0795. Retour à l'ensemble sans spécialistes : `--options '{"specialistes": false}'`.
 
 Recette du 12 novembre (`docs/JOURNAL_RECETTE.md`) : le boosting change de variables et de réglage

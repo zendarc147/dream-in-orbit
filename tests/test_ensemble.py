@@ -75,7 +75,7 @@ class EnsembleTest(unittest.TestCase):
         avec = self.ensemble.set_index("ut_ms")
         regles = json.loads((POIDS / "specialiste" / "specialistes.json").read_text())
         autres = [c for c in avec.columns if c not in regles]
-        self.assertEqual(len(autres), 31)
+        self.assertEqual(len(autres), 33 - len(regles))
         np.testing.assert_array_equal(avec[autres].to_numpy(), seul[autres].to_numpy())
         for c in regles:
             self.assertGreater(np.abs(avec[c] - seul[c]).max(), 1e-3)
