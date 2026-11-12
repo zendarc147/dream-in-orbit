@@ -28,13 +28,17 @@ import torch
 from torch import nn
 
 from baselines.boosting import recaler
-from . import donnees, variables
+from . import caracteristiques, donnees, variables
 
 CONFIG_DEFAUT = {
     "variables": "v2r", "familles_variante": True, "retirer": [r"dmop_(?!other_count|total_count)\w+_count"],
     "taille": 128, "dropout": 0.3, "dropout_variables": 0.2, "graines": [0, 1, 2, 3, 4], "epoques": 80,
     "flux": 16, "segment_h": 168, "epoques_verite": 15, "bruit_retour": 0.05, "lr": 1e-3, "weight_decay": 1e-3,
     "montee": 0.15, "reinjection": True,
+    # Recette complète (docs/JOURNAL_RECETTE_COMPLETE.md) : variables « S » de dio/caracteristiques.py (options
+    # d'ablation dans « recette ») ; B : premier segment de chaque flux avec la vérité réinjectée ; normalisation
+    # « minmax » : bornes min/max d'entraînement puis clip ±5 (convention de monde.py, ablation).
+    "recette": None, "premier_segment_verite": False, "normalisation": "standard",
 }
 APPAREIL = "cuda" if torch.cuda.is_available() else "cpu"
 BORNE = 10.0
@@ -78,9 +82,35 @@ def construire(x, dmop, config, familles):
     return valeurs[:, garder], [n for n, g in zip(noms, garder) if g]
 
 
+def colonnes_s(table, config):
+    """Colonnes GRU de la recette S, moins celles de config["retirer"] (expressions régulières)."""
+    retirer = re.compile("|".join(config["retirer"]) or "(?!)")
+    return [c for c in caracteristiques.colonnes_gru(table) if not retirer.fullmatch(c)]
+
+
+def preparer_s(annees, config, schema):
+    """Variables S par période (vocabulaire appris sur ces seules périodes) ; périodes contiguës fusionnées
+    (aucune variable GRU ne regarde les heures voisines)."""
+    brutes = [caracteristiques.charger_periode(a, schema["target_columns"]) for a in annees]
+    vocab = caracteristiques.apprendre([t for _, t, _ in brutes])
+    periodes, fin = [], None
+    for h, t, y in brutes:
+        table = caracteristiques.construire(t, h, vocab, config["recette"])
+        noms = colonnes_s(table, config)
+        f = table[noms].to_numpy(dtype=np.float64)
+        if periodes and fin + donnees.H == h[0]:
+            f0, y0 = periodes.pop()
+            f, y = np.concatenate([f0, f]), np.concatenate([y0, y])
+        periodes.append((f, y))
+        fin = h[-1]
+    return schema, periodes, noms, vocab
+
+
 def preparer(annees, config):
     """Périodes (variables, courants) ; années contiguës fusionnées en une période."""
     schema = donnees.charger_schema()
+    if config["variables"] == "S":
+        return preparer_s(annees, config, schema)
     blocs = []
     for annee in annees:
         heures, x, y = donnees.charger_annee(annee, schema)
@@ -103,10 +133,14 @@ def statistiques(periodes):
     y = np.concatenate([c for _, c in periodes])
     ecart = f.std(axis=0)
     return {"x_moyenne": f.mean(axis=0), "x_ecart": np.where(ecart < 1e-3, 1.0, ecart),
+            "x_min": f.min(axis=0), "x_max": f.max(axis=0),
             "y_moyenne": np.nanmean(y, axis=0), "y_ecart": np.maximum(np.nanstd(y, axis=0), 1e-6)}
 
 
-def standardiser(f, stats):
+def standardiser(f, stats, normalisation="standard"):
+    if normalisation == "minmax":
+        f = np.clip(f, stats["x_min"], stats["x_max"])
+        return np.clip((f - stats["x_moyenne"]) / stats["x_ecart"], -5.0, 5.0)
     return np.clip((f - stats["x_moyenne"]) / stats["x_ecart"], -BORNE, BORNE)
 
 
@@ -135,7 +169,7 @@ def entrainer_un(periodes, stats, config, graine):
     rng = np.random.default_rng(graine)
     # Les périodes sont mises bout à bout : un flux qui passe la fin d'une période repart avec son état
     # (ponytail: une seule période dans tous les usages actuels ; couper les flux si plusieurs périodes).
-    f = standardiser(np.concatenate([p for p, _ in periodes]), stats)
+    f = standardiser(np.concatenate([p for p, _ in periodes]), stats, config.get("normalisation", "standard"))
     y = np.concatenate([c for _, c in periodes])
     yn = (y - stats["y_moyenne"]) / stats["y_ecart"]
     n_circuits = y.shape[1]
@@ -160,7 +194,8 @@ def entrainer_un(periodes, stats, config, graine):
                                 device=APPAREIL)
             cible = torch.as_tensor(np.stack([morceau(y, d, seg) for d in positions]), dtype=torch.float32,
                                     device=APPAREIL)
-            sortie, h, precedent = modele.avancer(x, h, precedent, (cible - m_t) / e_t, p_verite,
+            p = 1.0 if k == 0 and config.get("premier_segment_verite") else p_verite
+            sortie, h, precedent = modele.avancer(x, h, precedent, (cible - m_t) / e_t, p,
                                                   config["bruit_retour"])
             masque = torch.isfinite(cible)
             perte = ((sortie * e_t + m_t - torch.nan_to_num(cible)) ** 2)[masque].mean()
@@ -205,10 +240,15 @@ def predire(test_dir, out, dossier, recalage=0.0, demi_vie=1440):
     config, stats = paquet["config"], {k: v.numpy() for k, v in paquet["stats"].items()}
     test = donnees.lire_dossier_test(test_dir)
     n_init = test["n_init"]
-    f, noms = construire(test["X"], test["dmop"], config, paquet["familles"])
+    if config["variables"] == "S":
+        table = caracteristiques.construire(test["tables"], test["heures"], paquet["familles"], config["recette"])
+        noms = colonnes_s(table, config)
+        f = table[noms].to_numpy(dtype=np.float64)
+    else:
+        f, noms = construire(test["X"], test["dmop"], config, paquet["familles"])
     if noms != paquet["variables"]:
         raise ValueError("Variables différentes de celles de l'entraînement")
-    x = torch.as_tensor(standardiser(f, stats)[None], dtype=torch.float32)
+    x = torch.as_tensor(standardiser(f, stats, config.get("normalisation", "standard"))[None], dtype=torch.float32)
     verite = torch.as_tensor(((test["y_init"][:n_init] - stats["y_moyenne"]) / stats["y_ecart"])[None],
                              dtype=torch.float32)
     sorties = []

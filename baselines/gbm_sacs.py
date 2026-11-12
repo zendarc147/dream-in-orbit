@@ -31,6 +31,7 @@ seulement : débruite le cycle des thermostats, la prédiction reste horaire).
 Les variables quasi constantes sur l'entraînement sont écartées (même règle que monde.py).
 power_init ne sert qu'au recalage du niveau, à la prédiction (boosting.recaler).
 """
+import json
 import lzma
 import os
 import pickle
@@ -45,7 +46,7 @@ from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor
 from threadpoolctl import threadpool_limits
 
 from baselines.boosting import recaler
-from dio import commandes, contexte as contexte_brut, donnees, monde, prepare, variables
+from dio import caracteristiques, commandes, contexte as contexte_brut, donnees, monde, prepare, variables
 
 H = donnees.H
 HORLOGE = ["ltdata_sunmars_km", "ltdata_earthmars_km", "ltdata_sunmarsearthangle_deg", "ltdata_solarconstantmars"]
@@ -418,8 +419,9 @@ def _ajuster(f, y, lignes, config, graine, perte="squared_error"):
 
 def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filtre=True, graine=0,
               ajouts=(), sans_horloge=False, compresser=False, circuits=None, lissage_cible=0,
-              perte="squared_error", familles_variante=False, retirer=(), plan=None, contexte=None):
-    """compresser : gbm_sacs.pkl.xz (lzma, environ 8 fois plus petit, 2 min de plus à l'écriture).
+              perte="squared_error", familles_variante=False, retirer=(), plan=None, contexte=None, recette=None):
+    """jeu « S » : variables de dio/caracteristiques.py (recette : options d'ablation de construire).
+    compresser : gbm_sacs.pkl.xz (lzma, environ 8 fois plus petit, 2 min de plus à l'écriture).
     circuits : colonnes apprises (toutes par défaut) ; lissage_cible : fenêtre en heures de la moyenne
     centrée appliquée aux cibles de chaque année (0 : cibles horaires brutes) ; perte : « absolute_error »
     apprend la médiane conditionnelle (un mode rare et inexpliqué ne tire plus le niveau de base) ;
@@ -429,6 +431,15 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
     schema = donnees.charger_schema()
     noms = list(circuits or schema["target_columns"])
     indices = [schema["target_columns"].index(c) for c in noms]
+    if jeu == "S":  # recette complète (dio/caracteristiques.py) : vocabulaire appris sur ces seules périodes
+        periodes = [caracteristiques.charger_periode(a, schema["target_columns"]) for a in annees]
+        vocab = caracteristiques.apprendre([t for _, t, _ in periodes])
+        blocs = [caracteristiques.construire(t, h, vocab, recette) for h, t, _ in periodes]
+        table = pd.concat(blocs)[caracteristiques.colonnes_gbm(blocs[0], recette)]
+        heures = np.concatenate([h for h, _, _ in periodes])
+        y = np.concatenate([yy[:, indices] for _, _, yy in periodes])
+        return _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h, filtre, graine, perte,
+                                  compresser, {"jeu": "S", "vocab": vocab, "recette": recette, "annees": list(annees)})
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
     familles = variables.apprendre_familles(list(tables.values()), familles_variante) if jeu == "V2" else []
     planning = (apprendre_planning(list(tables.values()), familles_variante, **(plan or {}))
@@ -445,6 +456,17 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
             y = y.rolling(lissage_cible, center=True, min_periods=1).mean().where(y.notna())
         ys.append(y.to_numpy())
     heures, table, y = np.concatenate(heures), pd.concat(blocs), np.concatenate(ys)
+    return _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h, filtre, graine, perte,
+                              compresser, {"jeu": jeu, "familles": familles, "ajouts": list(ajouts), "planning": planning,
+                                           "sans_horloge": sans_horloge, "lissage_cible": lissage_cible,
+                                           "familles_variante": familles_variante, "retirer": list(retirer),
+                                           "contexte": contexte, "annees": list(annees)})
+
+
+def _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h, filtre, graine, perte, compresser,
+                       meta):
+    """Ajuster les sacs × circuits, écrire le paquet, hors_sac.csv, colonnes.json et iterations.json
+    (nombre effectif d'arbres par circuit et par sac : max_iter n'est qu'un plafond avec l'arrêt anticipé)."""
     colonnes, f = list(table.columns), table.to_numpy(dtype=np.float64)
     if filtre:
         garder = monde.calculer_stats(f, y)["garder"]
@@ -464,12 +486,14 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
             hors_sac[bloc] = np.stack([m.predict(f[bloc]) for m in sac], axis=1)
         pd.DataFrame(hors_sac, index=pd.Index(heures, name="ut_ms"),
                      columns=noms).to_csv(dossier / "hors_sac.csv")
+    (dossier / "colonnes.json").write_text(json.dumps(colonnes, indent=0) + "\n")
+    iterations = {c: [int(getattr(sac[i], "n_iter_", 0)) for sac in modeles] for i, c in enumerate(noms)}
+    (dossier / "iterations.json").write_text(json.dumps(iterations) + "\n")
     with (lzma.open(dossier / "gbm_sacs.pkl.xz", "wb") if compresser else open(dossier / "gbm_sacs.pkl", "wb")) as fichier:
-        pickle.dump({"config": config, "jeu": jeu, "colonnes": colonnes, "familles": familles,
-                     "ajouts": list(ajouts), "planning": planning, "sans_horloge": sans_horloge,
-                     "circuits": noms, "lissage_cible": lissage_cible, "familles_variante": familles_variante, "retirer": list(retirer), "contexte": contexte, "perte": perte, "annees": list(annees), "modeles": modeles}, fichier)
-    print(f"{len(modeles)} sac(s) × {n_circuits} boostings ({config}, {jeu}, {len(colonnes)} variables)"
-          f" entraînés sur {', '.join(annees)}")
+        pickle.dump({**meta, "config": config, "colonnes": colonnes, "circuits": noms, "perte": perte,
+                     "modeles": modeles}, fichier)
+    print(f"{len(modeles)} sac(s) × {n_circuits} boostings ({config}, {meta['jeu']}, {len(colonnes)} variables)"
+          f" entraînés sur {', '.join(meta['annees'])}")
 
 
 def predire(test_dir, out, dossier, recalage=1.0, demi_vie=1440):
@@ -477,9 +501,13 @@ def predire(test_dir, out, dossier, recalage=1.0, demi_vie=1440):
     with (open(chemin, "rb") if chemin.exists() else lzma.open(chemin.with_suffix(".pkl.xz"), "rb")) as fichier:
         paquet = pickle.load(fichier)
     test = donnees.lire_dossier_test(test_dir)
-    table = construire(test["X"], test["dmop"], paquet["jeu"], paquet["familles"], paquet.get("ajouts", ()),
-                       paquet.get("planning"), paquet.get("sans_horloge", False), paquet.get("familles_variante", False),
-                       paquet.get("retirer", ()), test["tables"], paquet.get("contexte"))
+    if paquet["jeu"] == "S":
+        table = caracteristiques.construire(test["tables"], test["heures"], paquet["vocab"], paquet["recette"])
+    else:
+        table = construire(test["X"], test["dmop"], paquet["jeu"], paquet["familles"], paquet.get("ajouts", ()),
+                           paquet.get("planning"), paquet.get("sans_horloge", False),
+                           paquet.get("familles_variante", False), paquet.get("retirer", ()), test["tables"],
+                           paquet.get("contexte"))
     f = table[paquet["colonnes"]].to_numpy(dtype=np.float64)
     prediction = np.mean([[m.predict(f) for m in sac] for sac in paquet["modeles"]], axis=0).T
     indices = [donnees.charger_schema()["target_columns"].index(c) for c in paquet["circuits"]]

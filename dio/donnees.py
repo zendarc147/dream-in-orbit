@@ -24,6 +24,12 @@ def charger_annee(annee, schema=None):
     """Retourner (heures, X DataFrame, Y ndarray avec NaN) pour une période préparée."""
     schema = schema or charger_schema()
     dossier = PREPARE / annee
+    brut = Path(annee)
+    if not (RACINE / "data" / annee).is_dir() and (brut / "power.csv").is_file():
+        # Période hors du kit (validation chronologique) : préparée à la volée avec le schéma d'annee1.
+        y = prepare.cibles_horaires(brut / "power.csv", schema["target_columns"])
+        x = prepare.remplir_entrees(prepare.construire_entrees(prepare.lire_contextes(brut), y.index, schema), schema)
+        return x.index.to_numpy(), x, y.to_numpy(dtype=np.float64)
     if not (dossier / "X.csv").is_file():
         # Préparer à la demande à partir du kit brut (power.csv + contextes).
         prepare.preparer_periodes(RACINE / "data", PREPARE)
@@ -71,7 +77,7 @@ def lire_dossier_test(test_dir, schema=None):
 
 def lire_dmop(annee):
     """Table dmop brute d'une période du kit (pour l'état des sous-systèmes)."""
-    table = pd.read_csv(RACINE / "data" / annee / "dmop.csv")
+    table = pd.read_csv(_dossier(annee) / "dmop.csv")
     if table.columns.tolist() != prepare.COLONNES["dmop"]:
         raise ValueError(f"{annee}/dmop.csv : colonnes inattendues")
     return table
@@ -79,7 +85,11 @@ def lire_dmop(annee):
 
 def lire_contextes(annee):
     """Les cinq contextes bruts d'une période du kit (dmop, ftl, evtf, saaf, ltdata)."""
-    return prepare.lire_contextes(RACINE / "data" / annee)
+    return prepare.lire_contextes(_dossier(annee))
+
+
+def _dossier(annee):
+    return RACINE / "data" / annee if (RACINE / "data" / annee).is_dir() else Path(annee)
 
 
 def ecrire_predictions(heures, valeurs, heures_a_predire, circuits, out):
