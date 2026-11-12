@@ -9,7 +9,7 @@ pas de Kaggle). Branche locale `recette-complete` (depuis `recette`), rien n'est
 
 - Branche : `recette-complete`.
 - Jobs : voir `runs/rc_lot*.sh` / `.log` / `.pid` (attente par `kill -0 PID`).
-- Statut : voir « État » en bas.
+- Statut : programme terminé, modèle livré conservé (voir « Décision finale »). Jobs restants : `rc0_gbm_R_local` (temps local de R), `rc9_gruA_mm_physiques_g59`.
 
 ## Matériel et temps
 
@@ -185,3 +185,122 @@ w × GBM + (1 − w) × [(1 − a − b) GRU mixte + a G2 + b GRU S A borné], r
 
 Δ = −0.000447, les 4 RMSE baissent : critère d'installation rempli sur les deux validations temporelles.
 Porte restante : validation chronologique (`rc7_chrono_*`).
+
+### Validation chronologique (porte d'installation)
+
+`python outils/faire_chrono.py` puis `valider.py --direction chrono` : entraînement annee1 + première moitié d'annee2
+(8244 h), test sur la seconde moitié (7 jours de power_init, 8075 h notées). Composants réentraînés en local.
+Règle précisée avant le calcul des mélanges chrono : parmi les candidats qui remplissent le critère temporel,
+seuls ceux dont le mélange chrono n'est pas pire que celui de la structure livrée de plus de 0.0002 sont
+éligibles ; le choix entre eux se fait sur les validations temporelles (graines 0–4), jamais sur la chrono.
+
+| GRU seul (chrono, recalé) | RMSE | NPWD2551 / 2451 (×1e-4) | biais 2451 |
+|---|---:|---|---:|
+| G2 (anciennes entrées) | 0.082744 | 23.56 / 16.11 | +0.014 |
+| GRU S A borné | 0.088092 | 29.01 / 21.11 | +0.111 |
+
+Le GRU S perd surtout sur NPWD2451 au deuxième quart du test (biais +0.11), sans entrée hors domaine (toutes à
+moins de 1.1 écart-type de l'entraînement). Hypothèse : la période orbitale, très informative en directe, sert
+d'identifiant d'époque (une valeur ≈ une phase de mission) ; vérification par `rc7_chrono_gruA_mm_sans_periode`.
+
+### Ablations et réintroductions GBM, rapportées à la référence GBM S + GRU S A borné (0.078202)
+
+| Essai GBM (depuis S) | Seul directe | Seul inverse | Mélange moy. | Δ | Décision |
+|---|---:|---:|---:|---:|---|
+| SAAF pondéré par la durée | 0.078878 | 0.082600 | 0.078197 | −0.000005 | rejet |
+| LTDATA au milieu de l'heure | 0.079027 | 0.082549 | 0.078223 | +0.000021 | rejet |
+| historiques formule R | 0.079137 | 0.081665 | 0.078116 | −0.000087 | rejet |
+| sans altitude ni ses décalages | 0.078913 | 0.082450 | 0.078181 | −0.000021 | rejet |
+| récence en instants exacts | 0.078557 | 0.082177 | 0.077940 | −0.000262 | **garder (b)** |
+| sélection : + distance Terre et angle SMT | 0.083103 | 0.082397 | 0.078190 | −0.000012 | rejet (directe seule +0.004) |
+| réintro fenêtres v2r | 0.078893 | 0.082531 | 0.078281 | +0.000079 | rejet |
+| réintro moyennes passées `physiques` | 0.078914 | 0.081295 | 0.078006 | −0.000196 | **garder (b)** |
+| réintro harmoniques d'orbite + EMA lentes | 0.079214 | 0.082359 | 0.078008 | −0.000194 | rejet (directe seule monte) |
+| réintro colonnes brutes de prepare.py | 0.083594 | 0.082605 | 0.078313 | +0.000110 | rejet |
+
+Les conventions de la spec (SAAF arithmétique, LTDATA début d'heure, historiques umbra seule) ne changent presque
+rien au GBM (|Δ| ≤ 0.0001) ; la récence quantifiée est moins bonne que la récence exacte. Réunion des deux adoptions :
+`rc2_gbm_reunion`. GRU, réintroductions : `rc9_gruA_mm_*`.
+
+### GRU S borné : réintroductions (point 9, blocs du modèle actuel, un par un)
+
+| GRU S A borné + | Directe | Inverse | Mélange moy. (avec GBM S) | Δ | Chrono seul | Décision |
+|---|---:|---:|---:|---:|---:|---|
+| (rien, référence) | 0.078319 | 0.085929 | 0.078202 | — | 0.088092 | |
+| fenêtres v2r | 0.080333 | 0.083129 | 0.077995 | −0.000208 | 0.090023 | rejet |
+| moyennes passées `physiques` | 0.078884 | 0.081944 | 0.077328 | −0.000874 | 0.089402 | (a) sur les validations temporelles ; échoue en chrono |
+| colonnes brutes de prepare.py | 0.078613 | 0.082419 | 0.077601 | −0.000601 | | rejet (directe seule monte) |
+
+GRU S borné + `physiques` est le meilleur GRU seul sur les deux validations temporelles (mixte : 0.0790 / 0.0836).
+
+### Réunion GBM
+
+`rc2_gbm_reunion` (S + récence exacte + `physiques`) : 0.078645 / 0.080970, mélange 0.077780 (Δ −0.000422 contre S,
+garder). Toujours derrière R seul en directe (0.077775). Dans la structure livrée (poids 0.5, G2 0.3) : 0.077651 contre
+0.077683 pour R (−0.00003, directe 0–4 en hausse) : ne remplace pas R. Chrono du GBM S : 0.081078 contre 0.079899 (R).
+
+### Chrono : mélanges (GBM R, poids 0.5, recalage partout ; `runs/rc7_chrono_melanges.json`)
+
+| Part GRU | RMSE chrono | Δ contre le livré |
+|---|---:|---:|
+| **livré : 0.7 mixte + 0.3 G2** | **0.077893** | — |
+| C1 : 0.5 mixte + 0.5 GRU S borné | 0.079085 | +0.001192 |
+| 0.7 mixte + 0.3 GRU S borné | 0.078808 | +0.000915 |
+| C2 : 0.5 mixte + 0.5 GRU S borné + physiques | 0.079429 | +0.001536 |
+| 0.7 mixte + 0.3 GRU S borné + physiques | 0.079004 | +0.001111 |
+| 0.5 mixte + 0.5 GRU S borné + v2r | 0.079127 | +0.001234 |
+
+GRU seuls en chrono : mixte 0.082871, G2 0.082744, GRU S borné 0.088092, sans période 0.100439, + physiques 0.089402,
++ v2r 0.090023. **Tous les candidats avec un GRU S échouent à la porte chronologique** (+0.0009 à +0.0015 > 0.0002).
+Retirer la période n'aide pas en chrono (0.100) : la faiblesse vient de l'ensemble des entrées S, pas de la seule période.
+Lecture : les entrées S (contexte instantané, sans fenêtres passées/futures ni les variables brutes de prepare.py)
+séparent bien annee1 et annee2 mais généralisent moins bien à l'intérieur d'une même année, où les régimes de
+NPWD2451/2551 évoluent sans signal net dans le contexte.
+
+Observation non exploitée : sur la chrono, 0.5 mixte + 0.5 G2 fait 0.077627 (−0.00027). Cette part n'était pas dans la
+grille fixée d'avance et la chrono ne sert pas à choisir : piste à valider sur les validations temporelles seules.
+
+### Spécialistes (testés sur le modèle livré, qui reste)
+
+| Retrait | Directe 0–4 | Inverse 0–4 | Directe 5–9 | Inverse 5–9 | Moyenne | Δ |
+|---|---:|---:|---:|---:|---:|---:|
+| aucun (livré) | 0.075046 | 0.078474 | 0.075078 | 0.078343 | 0.076735 | — |
+| sans NPWD2551 (boosting propre) | 0.075138 | 0.078541 | 0.075170 | 0.078408 | 0.076814 | +0.000079 |
+| sans NPWD2532 (0.6 GBM + 0.4 physique) | 0.075124 | 0.079193 | 0.075146 | 0.079020 | 0.077121 | +0.000386 |
+| sans NPWD2531 (porte des marqueurs) | 0.075399 | 0.079023 | 0.075482 | 0.078988 | 0.077223 | +0.000488 |
+
+Les trois spécialistes restent utiles (chaque retrait dégrade les 4 RMSE).
+
+## Décision finale
+
+**Le modèle livré est conservé** (`poids/` inchangé, validation 0.076735 avec spécialistes). Le candidat C1 (part GRU
+0.5 mixte + 0.5 GRU S A borné) remplissait le critère temporel (0.076288, les 4 RMSE en baisse) mais dégrade la
+validation chronologique de 0.0012 ; la règle fixée avant les mesures l'exclut. Aucune autre combinaison ne passe.
+
+Ce qui est démontré :
+- code prêt : `dio/caracteristiques.py` (recette S exacte, testée), GBM `jeu="S"`, GRU `variables="S"`, options
+  `normalisation`, `premier_segment_verite`, `retirer`, validation chronologique, outils de bilan ;
+- inférence du livré reproduite en local (0.076735) ; entraînement local de R reproduit (`rc0_gbm_R_local`, ci-dessous) ;
+- gains démontrés sur les validations temporelles mais **non confirmés en chrono** : GRU S borné (directe 0.0783 contre
+  0.0790 pour le mixte), GRU S borné + physiques ;
+- résultat robuste et réutilisable : borner les entrées du GRU aux min/max d'entraînement supprime l'extrapolation
+  (inverse 0.098 → 0.086) ; la réinjection de la consommation n'aide pas ; la récence quantifiée de la spec est moins
+  bonne que la récence exacte ; les conventions SAAF/LTDATA/historiques de la spec sont neutres pour le GBM.
+
+Limites : une seule série de graines pour la plupart des ablations GRU (bruit en inverse de ±0.003 avant bornage) ;
+validation chronologique sur une seule coupure ; GRU mixte non réentraîné sur les validations temporelles avec les
+nouvelles entrées (seulement sur la chrono, 3748 s sur CPU) ; poids et parts choisis sur les validations elles-mêmes.
+
+## Reproduction
+
+```bash
+uv run python -m unittest tests.test_caracteristiques
+uv run python outils/faire_chrono.py
+uv run python outils/valider.py --nom rc1_gbm_S --modele gbm_sacs --options '{"config":"D","jeu":"S","sacs":5,"embargo_h":0,"filtre":false}'
+uv run python outils/valider.py --nom rc3_gruA_norm --modele gru_recette --options '{"variables":"S","reinjection":false,"normalisation":"minmax"}' --options-prediction '{"recalage": 1.0}'
+uv run python outils/croiser.py --gbm e22b_recette_sans_ema rc1_gbm_S --nom rc5_croisement
+uv run python outils/candidat.py --nom rc6_val_g04 --base s51_val_g04 --recette rc3_gruA_norm --part 0.5
+uv run python outils/valider.py --nom rc6_val_g04 --sans-entrainement
+uv run python outils/valider.py --nom rc7_chrono_gruA_mm --direction chrono --modele gru_recette --options '{"variables":"S","reinjection":false,"normalisation":"minmax"}' --options-prediction '{"recalage": 1.0}'
+```
+Tous les runs de cette session : `runs/rc*` (scores, `bilan.json`, `colonnes.json`, `iterations.json`, `train.log`).

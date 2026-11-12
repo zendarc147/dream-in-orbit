@@ -17,6 +17,7 @@ sont pas reportés ici ; seules les mesures du dépôt le sont.
   architecture du GRU recette), spécialiste physique de NPWD2532 sans lettres, reproductibilité de
   `python train.py` au bit près avec le nouveau GBM.
 - Runs Kaggle en cours : aucun (sinon `python outils/lancer_kaggle.py --fente N --rapatrier`).
+- Suite (12–13 nov., en local) : recette complète S, voir `docs/JOURNAL_RECETTE_COMPLETE.md` (modèle livré conservé).
 
 ## Protocole
 

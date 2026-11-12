@@ -85,7 +85,9 @@ def construire(x, dmop, config, familles):
 def colonnes_s(table, config):
     """Colonnes GRU de la recette S, moins celles de config["retirer"] (expressions régulières)."""
     retirer = re.compile("|".join(config["retirer"]) or "(?!)")
-    return [c for c in caracteristiques.colonnes_gru(table) if not retirer.fullmatch(c)]
+    # Blocs du modèle actuel réintroduits (recette « reintro », colonnes old_*) : ajoutés aussi au GRU.
+    noms = caracteristiques.colonnes_gru(table) + [c for c in table.columns if c.startswith("old_")]
+    return [c for c in noms if not retirer.fullmatch(c)]
 
 
 def preparer_s(annees, config, schema):
