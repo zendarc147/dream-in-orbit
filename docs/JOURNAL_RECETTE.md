@@ -505,3 +505,22 @@ avec `p1_gru_g04` / `p1_gru_g59`, seul et dans le mélange installé.
 Incident : une boucle d'attente `while kill -0 $(pgrep -f "unittest tests.test_ensemble")` se trouvait
 elle-même et a tourné 11 h, jusqu'à ce que l'utilisateur la signale. Arrêtée ; les attentes passent
 désormais par le PID enregistré au lancement.
+
+Résultats (prédictions refaites en local) :
+
+| GRU | Directe 0–4 | Directe 5–9 | Inverse 0–4 | Inverse 5–9 | Moy. 4 |
+|---|---:|---:|---:|---:|---:|
+| GRU actuel seul | 0.079062 | 0.078719 | 0.083579 | 0.084229 | 0.08140 |
+| sans lettres, familles corrigées, seul | 0.079030 | 0.078722 | 0.083565 | 0.083663 | 0.08124 (−0.00015) |
+| mélange installé (GBM 0.5, recette 0.3) avec GRU actuel | 0.07563 | 0.07562 | 0.07990 | 0.07998 | 0.07778 |
+| idem avec GRU sans lettres | 0.07557 | 0.07564 | 0.07980 | 0.07972 | 0.07768 (−0.00010) |
+
+- Le retrait des 76 colonnes par lettre ne coûte rien et aide un peu en inverse (−0.0006 sur les graines
+  5–9). NPWD2881, que la branche de commandes visait : +0.45e-4 en directe, −0.96e-4 en inverse.
+- Critère d'installation du GRU (fixé avant mesure : les deux directions et les deux groupes de graines
+  baissent) : **non rempli, de justesse.** La directe des graines 5–9 monte de 0.000003 (GRU seul) et
+  de 0.00002 (mélange). La règle (b) serait remplie : GRU seul en baisse dans les deux directions,
+  mélange −0.00010.
+- **Décision : non installé selon la règle.** Argument contraire, laissé à l'utilisateur : le modèle sans
+  lettres a 76 colonnes de moins, ne suppose pas qu'une lettre garde le même sens d'une période à
+  l'autre, et fait au moins aussi bien sur la validation. C'est plus prudent pour une année nouvelle.
