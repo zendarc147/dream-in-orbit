@@ -23,6 +23,15 @@ Ajouts optionnels (ablations de la phase 2, docs/JOURNAL_ENSEMBLE.md) :
 - regimes : par famille du planning, comptes dans les fenêtres centrées de ±24 h et ±168 h
   (le planning est connu d'avance : marqueur d'un mode, ex. ATTTF410 pendant le palier 0.1
   de NPWD2531) ;
+- echelles : moyennes passées et futures 24/72/168/336/720 h de l'ombre, de la pénombre, de la durée
+  d'éclipse ltdata, du flux éclairé par face et des modes de pointage ftl, et tendance passé 168 h −
+  passé 720 h (docs/JOURNAL_2551.md, programme 2) ;
+- attt : heures depuis et jusqu'à ATTT305C/O/P, ATTT306C/P et leurs familles ATTT305/ATTT306 (plafond
+  168 h), comptes passés et futurs sur 24 h (signal d'arrêt possible de NPWD2551) ;
+- etats : commandes comme états persistants (dernier code de chaque famille à plusieurs variantes, NaN
+  pendant une lacune du journal dmop) ; bords_nan : fenêtres longues incomplètes mises à NaN (programme 3) ;
+- commutateur : état estimé des familles de commandes dont le code suit le régime haut / bas de NPWD2551 à
+  l'entraînement (AXXX301 / AXXX305), avec bascule sur un code inconnu et état initial tiré de power_init ;
 - sans_horloge : retire les distances et angles ltdata, lents et quasi monotones sur une
   année, qui servent d'horloge indirecte.
 Options des spécialistes (docs/JOURNAL_SPECIALISTES.md) : circuits (n'apprendre que
@@ -55,13 +64,27 @@ CONSTANTES_EMA = (3, 12, 48, 168)
 CONSTANTES_LENTES = (336, 720)
 DEMI_FENETRES_REGIME = (24, 168)
 HARMONIQUES_ORBITE = (2, 3, 4)
+FENETRES_ECHELLES = (24, 72, 168, 336, 720)
+CODES_ATTT = {"ATTT305C": ["ATTT305C"], "ATTT305O": ["ATTT305O"], "ATTT305P": ["ATTT305P"],
+              "ATTT306C": ["ATTT306C"], "ATTT306P": ["ATTT306P"],
+              "ATTT305": ["ATTT305C", "ATTT305O", "ATTT305P"], "ATTT306": ["ATTT306C", "ATTT306P"]}
+# Ensemble XGBoost diversifié (config « XGBn ») : tirages par modèle (docs/JOURNAL_2551.md, programme 2).
+XGB_TIRAGES = {"max_depth": (3, 5, 7, 9), "n_estimators": (200, 400, 600), "reg_lambda": (1.0, 2.0)}
+XGB_FIXES = {"learning_rate": 0.03, "subsample": 0.8, "min_child_weight": 20, "tree_method": "hist"}
+XGB_PART_COLONNES = 0.7
 PLAFOND_RECENCE_H = 168
+CIRCUIT_COMMUTATEUR, SEUIL_REGIME, MIN_HEURES_REGIME, ETA_COMMUTATEUR = "NPWD2551", 0.15, 6, 0.5
+LACUNE_DMOP_H = 48  # intervalle sans aucune commande au-delà duquel l'état des commandes est inconnu
 # Comptes horaires des commandes exactes de prepare.py (lettre de variante comprise, ex. dmop_AAAAF20C1_count).
 LETTRES = [r"dmop_(?!other_count|total_count)\w+_count"]
 # Noms utilisables dans retirer (évite d'écrire les expressions dans le JSON des options).
 RETRAITS = {"lettres": LETTRES, "distance_terre": ["ltdata_earthmars_km", "ltdata_sunmarsearthangle_deg"],
             "ema": [r".*_ema\d+h"]}
-AJOUTS_CONTEXTE = {"geometrie", "altitude", "ombres", "contacts"}
+AJOUTS_CONTEXTE = {"geometrie", "altitude", "ombres", "contacts", "orbite_exacte", "evtf_plus", "blocs_b"}
+# Programme 5 (docs/JOURNAL_2551.md) : ajouts testés un à un sur le spécialiste de NPWD2551.
+AJOUTS_P5 = {"lentes", "thermique", "orbite_exacte", "evtf_plus", "blocs_b", "saison"}
+CONSTANTES_THERMIQUES = (6, 24, 72, 168, 336, 720, 1440)
+PLAFOND_SAISON_H = 120 * 24
 DECALAGES = (-3, -2, -1, 1, 2, 3)
 ORBITE_HORAIRE = ["orbite_pericentre_depuis_h", "orbite_pericentre_jusqua_h", "orbite_phase_cos", "orbite_phase_sin"]
 PLAFOND_LONG_H = 720
@@ -300,14 +323,289 @@ def moyennes_exponentielles(x, constantes=CONSTANTES_EMA, filtre=None):
     return pd.DataFrame(sortie, index=x.index)
 
 
-def orbite(x, table):
-    """Harmoniques de la phase orbitale (péricentre = 0) et inertie thermique lente par face."""
+def echelles(x, bords_nan=False):
+    """Moyennes passées et futures sur FENETRES_ECHELLES et tendance passé 168 h − passé 720 h.
+    bords_nan : NaN quand la fenêtre dépasse la période (au lieu d'une moyenne tronquée)."""
+    series = {"umbra": x["evtf_MAR_UMBRA_minutes"].to_numpy(dtype=np.float64) / 60,
+              "penumbra": x["evtf_MAR_PENUMBRA_minutes"].to_numpy(dtype=np.float64) / 60,
+              "eclipse_lt": x["ltdata_eclipseduration_min"].to_numpy(dtype=np.float64), **series_contexte(x)}
+    sortie = {}
+    for nom, serie in series.items():
+        for w in FENETRES_ECHELLES:
+            passe, futur = variables.sommes_glissantes(serie, w)
+            if bords_nan:
+                t = np.arange(len(serie))
+                passe, futur = np.where(t + 1 >= w, passe, np.nan), np.where(len(serie) - t >= w, futur, np.nan)
+            sortie[f"ech_{nom}_passe{w}h"], sortie[f"ech_{nom}_futur{w}h"] = passe, futur
+        sortie[f"ech_{nom}_tendance"] = sortie[f"ech_{nom}_passe168h"] - sortie[f"ech_{nom}_passe720h"]
+    return pd.DataFrame(sortie, index=x.index)
+
+
+def variables_attt(dmop, heures):
+    """Pour chaque entrée de CODES_ATTT : heures depuis la dernière commande (fin de l'heure) et jusqu'à
+    la prochaine (début de l'heure), plafond 168 h ; comptes sur les 24 h passées et les 24 h suivantes."""
+    heures = np.asarray(heures, dtype=np.int64)
+    sortie = {}
+    for nom, codes in CODES_ATTT.items():
+        temps = np.sort(dmop.ut_ms[dmop.subsystem.isin(codes)].to_numpy(dtype=np.int64))
+        sortie[f"attt_{nom}_depuis_h"] = heures_depuis(temps, heures)
+        suivant = np.searchsorted(temps, heures, side="left")
+        jusqua = np.full(len(heures), float(PLAFOND_RECENCE_H))
+        connu = suivant < len(temps)
+        jusqua[connu] = np.minimum((temps[suivant[connu]] - heures[connu]) / H, PLAFOND_RECENCE_H)
+        sortie[f"attt_{nom}_jusqua_h"] = jusqua
+        sortie[f"attt_{nom}_passe24h"] = (np.searchsorted(temps, heures + H, side="left")
+                                          - np.searchsorted(temps, heures + H - 24 * H, side="left"))
+        sortie[f"attt_{nom}_futur24h"] = (np.searchsorted(temps, heures + 24 * H, side="left")
+                                          - np.searchsorted(temps, heures, side="left"))
+    return pd.DataFrame(sortie, index=heures)
+
+
+def apprendre_etats(tables):
+    """Familles (lettres fusionnées) ayant au moins deux codes émis MIN_FAMILLE fois dans une période
+    d'entraînement : {famille: codes}, union des périodes."""
+    codes = sorted(set().union(*(c[c >= variables.MIN_FAMILLE].index for c in
+                                 (t.subsystem.value_counts() for t in tables))))
+    par_famille = {}
+    for c in codes:
+        if "." not in c:
+            par_famille.setdefault(commandes.famille(c), []).append(c)
+    return {f: v for f, v in sorted(par_famille.items()) if len(v) >= 2}
+
+
+def lacunes_dmop(dmop, heures):
+    """Heure dans un intervalle de plus de LACUNE_DMOP_H sans aucune commande (journal dmop absent) ;
+    heures depuis la dernière commande, toutes familles (log1p, plafond 720 h)."""
+    temps = np.sort(dmop.ut_ms.to_numpy(dtype=np.int64))
+    milieu = heures + H // 2
+    i = np.searchsorted(temps, milieu)
+    avant = np.where(i > 0, temps[np.maximum(i - 1, 0)], np.iinfo(np.int64).min // 2)
+    apres = np.where(i < len(temps), temps[np.minimum(i, len(temps) - 1)], np.iinfo(np.int64).max // 2)
+    lacune = (apres - avant) > LACUNE_DMOP_H * H
+    return lacune, heures_depuis(temps, heures, "debut")
+
+
+def variables_etats(dmop, heures, etats):
+    """Commandes comme états persistants : pour chaque famille d'etats, dernier code émis avant la fin de
+    l'heure (un indicateur par code connu, etat_F_inconnu pour un code jamais vu à l'entraînement) et heures
+    depuis le dernier changement de code (log1p, plafond 720 h). Inconnu (NaN) avant la première commande de
+    la famille et pendant une lacune du journal dmop ; dmop_lacune et dmop_depuis_h décrivent la lacune."""
+    heures = np.asarray(heures, dtype=np.int64)
+    lacune, depuis = lacunes_dmop(dmop, heures)
+    sortie = {"dmop_lacune": lacune.astype(float), "dmop_depuis_h": depuis}
+    familles = dmop.subsystem.map(commandes.famille)
+    for f, codes in etats.items():
+        lignes = dmop[familles == f].sort_values("ut_ms", kind="stable")
+        temps, valeurs = lignes.ut_ms.to_numpy(dtype=np.int64), lignes.subsystem.to_numpy()
+        position = np.searchsorted(temps, heures + H, side="left") - 1
+        inconnu = (position < 0) | lacune
+        etat = valeurs[np.maximum(position, 0)] if len(valeurs) else np.full(len(heures), "")
+        for c in codes:
+            sortie[f"etat_{f}_{c}"] = np.where(inconnu, np.nan, (etat == c).astype(float))
+        sortie[f"etat_{f}_inconnu"] = np.where(inconnu, np.nan, (~np.isin(etat, codes)).astype(float))
+        changements = temps[1:][valeurs[1:] != valeurs[:-1]]
+        sortie[f"etat_{f}_depuis_chgt_h"] = np.where(inconnu, np.nan, heures_depuis(changements, heures, "debut"))
+    return pd.DataFrame(sortie, index=heures)
+
+
+def regime_journalier(heures, y):
+    """Par heure : 1 si la moyenne des heures connues de son jour dépasse SEUIL_REGIME, 0 sinon, NaN si le
+    jour a moins de MIN_HEURES_REGIME heures connues (régime haut / bas de NPWD2551, programme 3)."""
+    jours = np.asarray(heures, dtype=np.int64) // (24 * H)
+    _, inverse = np.unique(jours, return_inverse=True)
+    connus = np.isfinite(y)
+    somme = np.bincount(inverse, np.where(connus, y, 0.0))
+    nombre = np.bincount(inverse, connus.astype(float))
+    moyenne = np.where(nombre >= MIN_HEURES_REGIME, somme / np.maximum(nombre, 1), np.nan)[inverse]
+    return np.where(np.isfinite(moyenne), (moyenne > SEUIL_REGIME).astype(float), np.nan)
+
+
+def code_courant(dmop, heures, famille, lacune):
+    """Dernier code de la famille émis avant la fin de chaque heure ("" : aucun encore, ou lacune dmop)."""
+    lignes = dmop[dmop.subsystem.map(commandes.famille) == famille].sort_values("ut_ms", kind="stable")
+    temps, codes = lignes.ut_ms.to_numpy(dtype=np.int64), lignes.subsystem.to_numpy()
+    position = np.searchsorted(temps, heures + H, side="left") - 1
+    courant = np.where(position >= 0, codes[np.maximum(position, 0)], "") if len(codes) else np.full(len(heures), "")
+    return np.where(lacune, "", courant), temps, codes, position
+
+
+def apprendre_commutateur(tables, heures, ys):
+    """Familles dont le code courant sépare le régime de NPWD2551 (η² ≥ ETA_COMMUTATEUR dans une période
+    d'entraînement) et, pour chacune, la part d'heures en régime haut sous chaque code (vu ≥ 168 h).
+    Appris sur l'entraînement seul ; la lettre de variante peut changer d'une année à l'autre (AXXX301 : A/B
+    en annee1, C/E/B en annee2), d'où la règle de bascule de variables_commutateur."""
+    sortie = {}
+    for f in apprendre_etats(tables):
+        cumul, retenue = {}, False
+        for dmop, h, y in zip(tables, heures, ys):
+            h = np.asarray(h, dtype=np.int64)
+            lacune, _ = lacunes_dmop(dmop, h)
+            courant = code_courant(dmop, h, f, lacune)[0]
+            lab = regime_journalier(h, y)
+            k = np.isfinite(lab) & (courant != "")
+            if k.sum() < 168 or np.var(lab[k]) == 0:
+                continue
+            t = pd.DataFrame({"c": courant[k], "l": lab[k]})
+            g = t.groupby("c").l.agg(["mean", "size"])
+            eta2 = float((g["size"] * (g["mean"] - lab[k].mean()) ** 2).sum() / (k.sum() * np.var(lab[k])))
+            retenue |= eta2 >= ETA_COMMUTATEUR
+            for c, (m, n) in g.iterrows():
+                a = cumul.setdefault(c, [0.0, 0])
+                a[0] += m * n
+                a[1] += n
+        if retenue:
+            sortie[f] = {c: a[0] / a[1] for c, a in cumul.items() if a[1] >= 168}
+    return sortie
+
+
+def variables_commutateur(dmop, heures, commutateur, init=None):
+    """État estimé du commutateur, commande par commande, pour chaque famille de commutateur : code connu net
+    (part haute ≥ 0.7 ou ≤ 0.3 à l'entraînement) : son état ; code inconnu ou ambigu différent du précédent :
+    l'état bascule ; même code : inchangé. Avant la première commande et pour un premier code inconnu : init
+    (régime du dernier jour de power_init au test ; inconnu à l'entraînement). NaN pendant une lacune dmop.
+    Les familles sont réunies en un commutateur « actif » : à chaque heure, celle dont le code a changé le plus
+    récemment (AXXX305 suit le régime en annee1 mais ne change plus en annee2). Sorties : comm_haut, comm_inconnu
+    (code courant inconnu), heures depuis / jusqu'au changement de code le plus proche, depuis la dernière
+    commande (log1p, plafond 720 h)."""
+    heures = np.asarray(heures, dtype=np.int64)
+    lacune, _ = lacunes_dmop(dmop, heures)
+    depart = np.nan if init is None else float(init)
+    n, k = len(heures), len(commutateur)
+    haut, inconnu = np.full((n, k), depart), np.full((n, k), np.nan)
+    depuis, jusqua, commande = np.full((n, k), np.inf), np.full((n, k), np.inf), np.full((n, k), np.inf)
+    for j, (f, parts) in enumerate(commutateur.items()):
+        courant, temps, codes, position = code_courant(dmop, heures, f, lacune)
+        if not len(codes):
+            continue
+        etat, precedent, chaine = depart, None, np.empty(len(codes))
+        for i, c in enumerate(codes):
+            p = parts.get(c)
+            if p is not None and abs(p - 0.5) >= 0.2:
+                etat = float(p > 0.5)
+            elif precedent is not None and c != precedent:
+                etat = 1.0 - etat
+            precedent, chaine[i] = c, etat
+        haut[:, j] = np.where(position >= 0, chaine[np.maximum(position, 0)], depart)
+        connus = [c for c, p in parts.items() if abs(p - 0.5) >= 0.2]
+        inconnu[:, j] = np.where(courant == "", np.nan, (~np.isin(courant, connus)).astype(float))
+        changements = temps[1:][codes[1:] != codes[:-1]]
+        avant = np.searchsorted(changements, heures + H, side="left") - 1
+        depuis[avant >= 0, j] = (heures[avant >= 0] + H - changements[avant[avant >= 0]]) / H
+        apres = np.searchsorted(changements, heures, side="left")
+        vu = apres < len(changements)
+        jusqua[vu, j] = (changements[apres[vu]] - heures[vu]) / H
+        derniere = np.searchsorted(temps, heures + H, side="left") - 1
+        commande[derniere >= 0, j] = (heures[derniere >= 0] + H - temps[derniere[derniere >= 0]]) / H
+    actif = np.argmin(depuis, axis=1) if k else np.zeros(n, int)
+    ligne = np.arange(n)
+    plafond = lambda v: np.log1p(np.minimum(v, PLAFOND_LONG_H))  # noqa: E731
+    sortie = {"comm_haut": np.where(lacune, np.nan, haut[ligne, actif]) if k else np.full(n, np.nan),
+              "comm_inconnu": np.where(lacune, np.nan, inconnu[ligne, actif]) if k else np.full(n, np.nan),
+              "comm_depuis_chgt_h": plafond(depuis.min(axis=1, initial=np.inf)),
+              "comm_jusqua_chgt_h": plafond(jusqua.min(axis=1, initial=np.inf)),
+              "comm_depuis_cmd_h": plafond(commande.min(axis=1, initial=np.inf))}
+    return pd.DataFrame(sortie, index=heures)
+
+
+def orbite(x, table, bords_nan=False):
+    """Harmoniques de la phase orbitale (péricentre = 0) et inertie thermique lente par face.
+    bords_nan : moyennes exponentielles NaN pendant les 2 tau premières heures (poids de x_0 > 13 %)."""
     phase = np.arctan2(table["orbite_phase_sin"].to_numpy(), table["orbite_phase_cos"].to_numpy())
     sortie = {}
     for k in HARMONIQUES_ORBITE:
         sortie[f"orbite_phase_cos{k}"], sortie[f"orbite_phase_sin{k}"] = np.cos(k * phase), np.sin(k * phase)
     lentes = moyennes_exponentielles(x, CONSTANTES_LENTES, lambda nom: nom == "ombre" or nom.endswith("_eclaire"))
+    if bords_nan:
+        t = np.arange(len(x))[:, None]
+        tau = np.array([int(re.search(r"_ema(\d+)h$", c).group(1)) for c in lentes.columns])[None, :]
+        lentes = lentes.where(t >= 2 * tau)
     return pd.concat([pd.DataFrame(sortie, index=x.index), lentes], axis=1)
+
+
+def filtres_lents(x, constantes, prefixe):
+    """Moyennes exponentielles de l'ombre et du flux éclairé par face, sous un nom que le retrait « ema » ne
+    supprime pas (le spécialiste hérite de retirer = ["ema"], qui effaçait les colonnes 336 et 720 h d'orbite)."""
+    table = moyennes_exponentielles(x, constantes, lambda nom: nom == "ombre" or nom.endswith("_eclaire"))
+    return table.rename(columns=lambda c: prefixe + re.sub(r"_ema(\d+)h$", r"_tau\1", c))
+
+
+def orbite_exacte(evtf, heures):
+    """Harmoniques 2 à 4 de la phase orbitale tirée des péricentres exacts (contexte.geometrie)."""
+    geo = contexte_brut.geometrie(evtf, heures)
+    phase = np.arctan2(geo["geo_phase_sin"].to_numpy(), geo["geo_phase_cos"].to_numpy())
+    sortie = {}
+    for k in HARMONIQUES_ORBITE:
+        sortie[f"geo_phase_cos{k}"], sortie[f"geo_phase_sin{k}"] = np.cos(k * phase), np.sin(k * phase)
+    return pd.DataFrame(sortie, index=heures)
+
+
+def evtf_plus(evtf, heures):
+    """Paramètres EVTF que prepare.py écarte : angle zénithal solaire et point sous-satellite du péricentre
+    précédent (et angle du suivant), temps lumière aller-retour (RTLT, interpolé), contacts au seuil de 5°,
+    contacts MRB aux seuils 00 et 10. Lus au milieu de l'heure."""
+    heures = np.asarray(heures, dtype=np.int64)
+    milieux = heures + H // 2
+    d, temps = evtf.description.astype(str), evtf.ut_ms.to_numpy(dtype=np.int64)
+    sortie = {}
+    p = d.str.extract(r"^PERICENTRE_PASSAGE_\d+_/_SSP_\(([-\d.]+),([-\d.]+)\)_/_SZA_(\d+)").astype(float)
+    k = p[2].notna().to_numpy()
+    if k.any():
+        tp, lon, lat, sza = temps[k], *(p[i].to_numpy()[k] for i in range(3))
+        i = np.searchsorted(tp, milieux, side="right") - 1
+        avant, apres = np.clip(i, 0, len(tp) - 1), np.clip(i + 1, 0, len(tp) - 1)
+        sortie.update({"peri_sza": sza[avant], "peri_sza_suivant": sza[apres], "peri_lat": lat[avant],
+                       "peri_lon_cos": np.cos(np.deg2rad(lon[avant])), "peri_lon_sin": np.sin(np.deg2rad(lon[avant]))})
+    r = d.str.extract(r"_/_RTLT_(\d+)$", expand=False).astype(float)
+    k = r.notna().to_numpy()
+    if k.any():
+        sortie["evtf_rtlt"] = np.interp(milieux, temps[k], r.to_numpy()[k])
+    for nom, motif in (("contact_05", r"^(?!MRB)[A-Z]{3}_(AOS|LOS)_05"), ("mrb_00", r"^MRB_(AOS|LOS)_00"),
+                       ("mrb_10", r"^MRB_(AOS|LOS)_10")):
+        sens = d.str.extract(motif, expand=False)
+        k = sens.notna().to_numpy()
+        stations = d[k].str[:3].to_numpy()
+        debuts, fins = [np.zeros(0, dtype=np.int64)], [np.zeros(0, dtype=np.int64)]
+        for s in np.unique(stations):
+            m = stations == s
+            a, b = contexte_brut.intervalles(temps[k][m], sens[k].to_numpy()[m], "AOS", "LOS",
+                                             contexte_brut.DUREE_MAX_CONTACT_MS)
+            debuts.append(a)
+            fins.append(b)
+        sortie[f"evtf_{nom}_fraction"] = prepare.durees_union(heures, np.concatenate(debuts), np.concatenate(fins)) / 60
+    return pd.DataFrame(sortie, index=heures)
+
+
+def blocs_b(evtf, dmop, heures):
+    """Blocs de la recette B absents du livré (baselines/recette_b.py) : somme des couvertures de stations à
+    tous les seuils, nombre d'événements par heure, intervalle MRB_/_RANGE, périodes début/fin des commandes
+    sans plafond de durée."""
+    from baselines import recette_b
+    g = np.asarray(heures, dtype=np.int64)
+    sortie = recette_b.evtf(evtf, g)[["ev_gs_sum", "ev_n_events", "ev_mrb_range"]].add_prefix("b_")
+    temps, cmd = dmop.ut_ms.to_numpy(dtype=np.int64), dmop.subsystem.astype(str)
+    prefixe, ident = cmd.str[:4].to_numpy(), cmd.str.rsplit(".", n=1).str[-1].to_numpy()
+    for debut, fin in PAIRES_LISTE:
+        a = pd.DataFrame({"id": ident[prefixe == debut], "s": temps[prefixe == debut]})
+        b = pd.DataFrame({"id": ident[prefixe == fin], "e": temps[prefixe == fin]})
+        j = a.merge(b, on="id", how="inner")
+        j = j[j.e > j.s]
+        sortie[f"b_dm_act_{debut}"] = recette_b.fraction(g, j.s.to_numpy(), j.e.to_numpy())
+    return sortie.set_axis(heures)
+
+
+def saison(x):
+    """Position par rapport aux saisons d'éclipses (ltdata_eclipseduration_min > 0), en jours, plafond 120 j :
+    depuis la dernière heure de saison, jusqu'à la prochaine ; dans une saison, âge et reste (NaN hors saison)."""
+    actif = x["ltdata_eclipseduration_min"].to_numpy(dtype=np.float64) > 0
+    t = np.arange(len(actif), dtype=float)
+    depuis = t - np.maximum.accumulate(np.where(actif, t, -np.inf))
+    jusqua = np.minimum.accumulate(np.where(actif, t, np.inf)[::-1])[::-1] - t
+    debut = np.maximum.accumulate(np.where(actif & ~np.r_[False, actif[:-1]], t, -np.inf))
+    fin = np.minimum.accumulate(np.where(actif & ~np.r_[actif[1:], False], t, np.inf)[::-1])[::-1]
+    jours = lambda v: np.minimum(v, PLAFOND_SAISON_H) / 24  # noqa: E731
+    return pd.DataFrame({"saison_depuis_j": jours(depuis), "saison_jusqua_j": jours(jusqua),
+                         "saison_age_j": np.where(actif, jours(t - debut), np.nan),
+                         "saison_reste_j": np.where(actif, jours(fin - t), np.nan)}, index=x.index)
 
 
 def preparer_contexte(x, contextes, contexte):
@@ -338,7 +636,7 @@ def preparer_contexte(x, contextes, contexte):
 
 
 def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge=False, variante=False,
-               retirer=(), contextes=None, contexte=None):
+               retirer=(), contextes=None, contexte=None, etats=None, bords_nan=False, commutateur=None, init=None):
     """Variables d'une période continue (x : X horaire de prepare.py, dmop : table brute).
     retirer : expressions régulières des colonnes à écarter (ablations de retrait) ; contextes : tables
     brutes de la période (saaf, ltdata, evtf), lues par les options contexte (preparer_contexte) et les
@@ -350,8 +648,8 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
     if contexte:
         x = preparer_contexte(x, contextes, contexte)
     inconnus = (set(ajouts) - {"planning", "historique", "ema", "orbite", "regimes", "decalages", "histoires",
-                               "face_sa_moins"}
-                - AJOUTS_CONTEXTE)
+                               "face_sa_moins", "echelles", "attt", "etats", "commutateur"}
+                - AJOUTS_CONTEXTE - AJOUTS_P5)
     if inconnus:
         raise ValueError(f"Ajouts inconnus : {sorted(inconnus)}")
     table = variables.ajouter_v2r(x)
@@ -366,7 +664,7 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
     if "ema" in ajouts:
         blocs.append(moyennes_exponentielles(x))
     if "orbite" in ajouts:
-        blocs.append(orbite(x, table))
+        blocs.append(orbite(x, table, bords_nan))
     if "regimes" in ajouts:
         blocs.append(variables_regimes(dmop, x.index.to_numpy(), planning).set_axis(x.index))
     if {"geometrie", "altitude"} & set(ajouts):
@@ -386,6 +684,26 @@ def construire(x, dmop, jeu, familles=(), ajouts=(), planning=None, sans_horloge
         blocs.append(contexte_brut.ombres(contextes["evtf"], x.index.to_numpy()).set_axis(x.index))
     if "contacts" in ajouts:
         blocs.append(contexte_brut.contacts(contextes["evtf"], x.index.to_numpy()).set_axis(x.index))
+    if "echelles" in ajouts:
+        blocs.append(echelles(x, bords_nan))
+    if "attt" in ajouts:
+        blocs.append(variables_attt(dmop, x.index.to_numpy()).set_axis(x.index))
+    if "etats" in ajouts:
+        blocs.append(variables_etats(dmop, x.index.to_numpy(), etats).set_axis(x.index))
+    if "commutateur" in ajouts:
+        blocs.append(variables_commutateur(dmop, x.index.to_numpy(), commutateur, init).set_axis(x.index))
+    if "lentes" in ajouts:
+        blocs.append(filtres_lents(x, CONSTANTES_LENTES, "lent_"))
+    if "thermique" in ajouts:
+        blocs.append(filtres_lents(x, CONSTANTES_THERMIQUES, "th_"))
+    if "orbite_exacte" in ajouts:
+        blocs.append(orbite_exacte(contextes["evtf"], x.index.to_numpy()).set_axis(x.index))
+    if "evtf_plus" in ajouts:
+        blocs.append(evtf_plus(contextes["evtf"], x.index.to_numpy()).set_axis(x.index))
+    if "blocs_b" in ajouts:
+        blocs.append(blocs_b(contextes["evtf"], dmop, x.index.to_numpy()).set_axis(x.index))
+    if "saison" in ajouts:
+        blocs.append(saison(x))
     table = pd.concat(blocs, axis=1)
     if sans_horloge:
         table = table.drop(columns=HORLOGE)
@@ -404,10 +722,46 @@ def sacs_temporels(n, sacs, embargo):
     return [(t[(t < a - embargo) | (t >= b + embargo)], t[a:b]) for a, b in zip(bornes[:-1], bornes[1:])]
 
 
-def _ajuster(f, y, lignes, config, graine, perte="squared_error"):
-    """Un circuit, un sac ; un seul thread par processus (les données sont petites)."""
+class EnsembleXGB:
+    """n modèles XGBoost, chacun sur XGB_PART_COLONNES des colonnes tirées au hasard, avec profondeur, nombre
+    d'arbres et régularisation L2 tirés dans XGB_TIRAGES ; prédiction = moyenne des modèles."""
+
+    def __init__(self, n, graine):
+        self.n, self.graine = n, graine
+
+    def fit(self, f, y):
+        import xgboost
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
+        hasard = np.random.default_rng(self.graine)
+        k = max(1, int(round(XGB_PART_COLONNES * f.shape[1])))
+        self.membres, self.tirages = [], []
+        for _ in range(self.n):
+            colonnes = np.sort(hasard.choice(f.shape[1], k, replace=False))
+            tirage = {cle: valeurs[hasard.integers(len(valeurs))] for cle, valeurs in XGB_TIRAGES.items()}
+            modele = xgboost.XGBRegressor(**XGB_FIXES, **tirage, device=device, n_jobs=os.cpu_count() or 1,
+                                          random_state=int(hasard.integers(2 ** 31)))
+            modele.fit(f[:, colonnes], y)
+            modele.set_params(device="cpu", n_jobs=1)  # prédiction locale sans GPU
+            self.membres.append((colonnes, modele))
+            self.tirages.append(tirage)
+        self.n_iter_ = int(np.mean([t["n_estimators"] for t in self.tirages]))
+        return self
+
+    def predict(self, f):
+        return np.mean([m.predict(f[:, c]) for c, m in self.membres], axis=0)
+
+
+def _ajuster(f, y, lignes, config, graine, perte="squared_error", sacs=1, sac=0):
+    """Un circuit, un sac ; un seul thread par processus (les données sont petites).
+    XGBn : n modèles XGBoost répartis entre les sacs (n / sacs par sac), graine propre à chaque sac."""
     y = y[lignes]
     connus = np.isfinite(y)  # cibles absentes retirées, jamais remplacées
+    if config.startswith("XGB"):
+        return EnsembleXGB(max(1, int(config[3:]) // sacs), 1000 * graine + sac).fit(f[lignes][connus], y[connus])
     with threadpool_limits(1):
         if config == "ET":
             modele = ExtraTreesRegressor(**EXTRA_TREES, random_state=graine, n_jobs=1)
@@ -419,7 +773,8 @@ def _ajuster(f, y, lignes, config, graine, perte="squared_error"):
 
 def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filtre=True, graine=0,
               ajouts=(), sans_horloge=False, compresser=False, circuits=None, lissage_cible=0,
-              perte="squared_error", familles_variante=False, retirer=(), plan=None, contexte=None, recette=None):
+              perte="squared_error", familles_variante=False, retirer=(), plan=None, contexte=None, recette=None,
+              rapide=False, bords_nan=False):
     """jeu « S » : variables de dio/caracteristiques.py (recette : options d'ablation de construire).
     compresser : gbm_sacs.pkl.xz (lzma, environ 8 fois plus petit, 2 min de plus à l'écriture).
     circuits : colonnes apprises (toutes par défaut) ; lissage_cible : fenêtre en heures de la moyenne
@@ -427,7 +782,9 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
     apprend la médiane conditionnelle (un mode rare et inexpliqué ne tire plus le niveau de base) ;
     familles_variante : familles de commandes commandes.famille_variante (≥ 50 fois par période, union) ;
     retirer : expressions régulières des colonnes écartées (ex. LETTRES) ; plan : options de
-    apprendre_planning (recence, prefixes, changements, paires) ; contexte : options de preparer_contexte."""
+    apprendre_planning (recence, prefixes, changements, paires) ; contexte : options de preparer_contexte.
+    rapide : la cible devient y − sa moyenne centrée sur lissage_cible heures (composante rapide d'un modèle
+    niveau lent + variations rapides)."""
     schema = donnees.charger_schema()
     noms = list(circuits or schema["target_columns"])
     indices = [schema["target_columns"].index(c) for c in noms]
@@ -440,27 +797,63 @@ def entrainer(annees, dossier, config="A", jeu="V1", sacs=5, embargo_h=168, filt
         y = np.concatenate([yy[:, indices] for _, _, yy in periodes])
         return _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h, filtre, graine, perte,
                                   compresser, {"jeu": "S", "vocab": vocab, "recette": recette, "annees": list(annees)})
+    heures, table, y, meta = preparer(annees, indices, jeu, ajouts, sans_horloge, lissage_cible, familles_variante,
+                                      retirer, plan, contexte, rapide, bords_nan, schema)
+    return _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h, filtre, graine, perte,
+                              compresser, meta)
+
+
+def preparer(annees, indices, jeu="V1", ajouts=(), sans_horloge=False, lissage_cible=0, familles_variante=False,
+             retirer=(), plan=None, contexte=None, rapide=False, bords_nan=False, schema=None):
+    """(heures, variables, cibles des colonnes indices, méta) des périodes d'entraînement ; la méta suffit à
+    construire_test pour refaire les mêmes variables sur un dossier de test."""
+    schema = schema or donnees.charger_schema()
     tables = {annee: donnees.lire_dmop(annee) for annee in annees}
     familles = variables.apprendre_familles(list(tables.values()), familles_variante) if jeu == "V2" else []
     planning = (apprendre_planning(list(tables.values()), familles_variante, **(plan or {}))
                 if {"planning", "regimes"} & set(ajouts) else None)
+    etats = apprendre_etats(list(tables.values())) if "etats" in ajouts else None
+    periodes = {annee: donnees.charger_annee(annee, schema) for annee in annees}
+    commutateur = (apprendre_commutateur([tables[a] for a in annees], [periodes[a][0] for a in annees],
+                                         [periodes[a][2][:, schema["target_columns"].index(CIRCUIT_COMMUTATEUR)]
+                                          for a in annees]) if "commutateur" in ajouts else None)
     heures, blocs, ys = [], [], []
     for annee in annees:
-        h, x, y = donnees.charger_annee(annee, schema)
+        h, x, y = periodes[annee]
         heures.append(h)
         contextes = donnees.lire_contextes(annee) if contexte or AJOUTS_CONTEXTE & set(ajouts) else None
         blocs.append(construire(x, tables[annee], jeu, familles, ajouts, planning, sans_horloge, familles_variante,
-                                retirer, contextes, contexte))
+                                retirer, contextes, contexte, etats, bords_nan, commutateur))
         y = pd.DataFrame(y[:, indices])
         if lissage_cible:
-            y = y.rolling(lissage_cible, center=True, min_periods=1).mean().where(y.notna())
+            lisse = y.rolling(lissage_cible, center=True, min_periods=1).mean().where(y.notna())
+            y = y - lisse if rapide else lisse
         ys.append(y.to_numpy())
     heures, table, y = np.concatenate(heures), pd.concat(blocs), np.concatenate(ys)
-    return _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h, filtre, graine, perte,
-                              compresser, {"jeu": jeu, "familles": familles, "ajouts": list(ajouts), "planning": planning,
-                                           "sans_horloge": sans_horloge, "lissage_cible": lissage_cible,
-                                           "familles_variante": familles_variante, "retirer": list(retirer),
-                                           "contexte": contexte, "annees": list(annees)})
+    return heures, table, y, {"jeu": jeu, "familles": familles, "ajouts": list(ajouts), "planning": planning,
+                              "sans_horloge": sans_horloge, "lissage_cible": lissage_cible,
+                              "familles_variante": familles_variante, "retirer": list(retirer),
+                              "contexte": contexte, "rapide": rapide, "etats": etats, "bords_nan": bords_nan,
+                              "commutateur": commutateur, "annees": list(annees)}
+
+
+def construire_test(test, paquet):
+    """Variables d'un dossier de test (donnees.lire_dossier_test) avec la méta d'un paquet ou de preparer."""
+    if paquet["jeu"] == "S":
+        return caracteristiques.construire(test["tables"], test["heures"], paquet["vocab"], paquet["recette"])
+    return construire(test["X"], test["dmop"], paquet["jeu"], paquet["familles"], paquet.get("ajouts", ()),
+                      paquet.get("planning"), paquet.get("sans_horloge", False), paquet.get("familles_variante", False),
+                      paquet.get("retirer", ()), test["tables"], paquet.get("contexte"), paquet.get("etats"),
+                      paquet.get("bords_nan", False), paquet.get("commutateur"),
+                      regime_initial(test) if paquet.get("commutateur") else None)
+
+
+def regime_initial(test):
+    """Régime de NPWD2551 (1 haut, 0 bas, None inconnu) sur le dernier jour de power_init (consommation fournie)."""
+    i = donnees.charger_schema()["target_columns"].index(CIRCUIT_COMMUTATEUR)
+    n = test["n_init"]
+    dernier = regime_journalier(test["heures"][:n], test["y_init"][:n, i])[-1]
+    return None if np.isnan(dernier) else float(dernier)
 
 
 def _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h, filtre, graine, perte, compresser,
@@ -473,10 +866,11 @@ def _ajuster_et_ecrire(heures, table, y, noms, dossier, config, sacs, embargo_h,
         colonnes, f = [c for c, g in zip(colonnes, garder) if g], f[:, garder]
     decoupe = sacs_temporels(len(f), sacs, embargo_h)
     n_circuits = y.shape[1]
-    processus = int(os.environ.get("MONDE_PROCESSUS", os.cpu_count() or 1))
+    # XGBoost : un ajustement à la fois, chacun sur tous les cœurs ou le GPU.
+    processus = 1 if config.startswith("XGB") else int(os.environ.get("MONDE_PROCESSUS", os.cpu_count() or 1))
     ajustes = Parallel(n_jobs=processus)(
-        delayed(_ajuster)(f, y[:, i], lignes, config, graine, perte)
-        for lignes, _ in decoupe for i in range(n_circuits))
+        delayed(_ajuster)(f, y[:, i], lignes, config, graine, perte, len(decoupe), k)
+        for k, (lignes, _) in enumerate(decoupe) for i in range(n_circuits))
     modeles = [ajustes[k * n_circuits:(k + 1) * n_circuits] for k in range(len(decoupe))]
     dossier = Path(dossier)
     dossier.mkdir(parents=True, exist_ok=True)
@@ -501,16 +895,13 @@ def predire(test_dir, out, dossier, recalage=1.0, demi_vie=1440):
     with (open(chemin, "rb") if chemin.exists() else lzma.open(chemin.with_suffix(".pkl.xz"), "rb")) as fichier:
         paquet = pickle.load(fichier)
     test = donnees.lire_dossier_test(test_dir)
-    if paquet["jeu"] == "S":
-        table = caracteristiques.construire(test["tables"], test["heures"], paquet["vocab"], paquet["recette"])
-    else:
-        table = construire(test["X"], test["dmop"], paquet["jeu"], paquet["familles"], paquet.get("ajouts", ()),
-                           paquet.get("planning"), paquet.get("sans_horloge", False),
-                           paquet.get("familles_variante", False), paquet.get("retirer", ()), test["tables"],
-                           paquet.get("contexte"))
-    f = table[paquet["colonnes"]].to_numpy(dtype=np.float64)
+    f = construire_test(test, paquet)[paquet["colonnes"]].to_numpy(dtype=np.float64)
     prediction = np.mean([[m.predict(f) for m in sac] for sac in paquet["modeles"]], axis=0).T
+    if paquet.get("rapide"):  # composante rapide (moyenne nulle par construction) : pas de recalage de niveau
+        recalage = 0.0
     indices = [donnees.charger_schema()["target_columns"].index(c) for c in paquet["circuits"]]
     prediction = recaler(prediction, test["y_init"][:, indices], test["n_init"], recalage, demi_vie)
-    return donnees.ecrire_predictions(test["heures"], np.clip(prediction, 0, None), test["heures_a_predire"],
+    if not paquet.get("rapide"):  # composante rapide : valeurs négatives gardées, la somme est bornée ensuite
+        prediction = np.clip(prediction, 0, None)
+    return donnees.ecrire_predictions(test["heures"], prediction, test["heures_a_predire"],
                                       paquet["circuits"], out)

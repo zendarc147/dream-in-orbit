@@ -61,6 +61,7 @@ CONFIG_DEFAUT = {
     "retirer": [],           # expressions régulières des variables écartées (ex. comptes exacts avec lettre)
     "poids_circuits": None,  # ex. {"NPWD2551": 4} : poids de ces circuits dans la MSE (moyenne des poids ramenée à 1)
     "lissage_cible": None,   # ex. {"NPWD2551": 3} : moyenne centrée de la cible sur N heures, entraînement seul
+    "ajouts_2551": None,     # ex. ["echelles", "saison", "thermique", "etats", "commutateur"] (voir ajouts_2551)
     "exclure": None,         # [début, fin) en fractions de chaque période, retiré avec 7 jours de marge (hors bloc)
     "taille": 128,
     "couches": 2,
@@ -358,10 +359,39 @@ def exclure_bloc(bloc, debut, fin, marge=168):
     return [(heures[s:e], x.iloc[s:e], y[s:e], dmop) for s, e in ((0, a - marge), (b + marge, n)) if e > s]
 
 
-def construire_variables(x, config, dmop, voc_commandes):
+def ajouts_2551(x, config, dmop, init=None):
+    """Variables du spécialiste boosting de NPWD2551 données au GRU (programme 5, docs/JOURNAL_2551.md) :
+    echelles, saison, thermique (x seul), etats et commutateur (vocabulaires appris à l'entraînement,
+    config["_etats_2551"] / config["_commutateur_2551"] ; init : régime du dernier jour de power_init, au test).
+    Valeurs inconnues : 0 (0.5 pour l'état du commutateur)."""
+    from baselines import gbm_sacs
+    heures, blocs = x.index.to_numpy(), []
+    for nom in config["ajouts_2551"]:
+        if nom == "echelles":
+            blocs.append(gbm_sacs.echelles(x))
+        elif nom == "saison":
+            blocs.append(gbm_sacs.saison(x))
+        elif nom == "thermique":
+            blocs.append(gbm_sacs.filtres_lents(x, gbm_sacs.CONSTANTES_THERMIQUES, "th_"))
+        elif nom == "etats":
+            blocs.append(gbm_sacs.variables_etats(dmop, heures, config["_etats_2551"]).set_axis(x.index))
+        elif nom == "commutateur":
+            blocs.append(gbm_sacs.variables_commutateur(dmop, heures, config["_commutateur_2551"], init).set_axis(x.index))
+        else:
+            raise ValueError(f"Ajout 2551 inconnu : {nom}")
+    table = pd.concat(blocs, axis=1)
+    if "comm_haut" in table:
+        table["comm_haut"] = table["comm_haut"].fillna(0.5)
+    return table.fillna(0.0)
+
+
+def construire_variables(x, config, dmop, voc_commandes, init=None):
     valeurs, noms = variables.construire(x, config["variables"], config["sans"], dmop, voc_commandes,
                                          config.get("physique", False), config.get("_familles"),
                                          config.get("familles_variante", False))
+    if config.get("ajouts_2551"):
+        table = ajouts_2551(x, config, dmop, init)
+        valeurs, noms = np.hstack([valeurs, table.to_numpy(dtype=np.float64)]), noms + list(table.columns)
     if config.get("retirer"):
         # Colonnes écartées par expression régulière (ex. comptes exacts avec lettre de variante).
         retirer = re.compile("|".join(config["retirer"]))
@@ -405,6 +435,12 @@ def preparer_annees(annees, config):
     if config.get("familles"):
         config["_familles"] = variables.apprendre_familles([dmop for *_, dmop in blocs],
                                                            config.get("familles_variante", False))
+    if config.get("ajouts_2551"):
+        from baselines import gbm_sacs
+        j = schema["target_columns"].index(gbm_sacs.CIRCUIT_COMMUTATEUR)
+        config["_etats_2551"] = gbm_sacs.apprendre_etats([dmop for *_, dmop in blocs])
+        config["_commutateur_2551"] = gbm_sacs.apprendre_commutateur(
+            [dmop for *_, dmop in blocs], [heures for heures, *_ in blocs], [y[:, j] for _, _, y, _ in blocs])
     periodes, copies = [], []
     for i, (_, x, y, dmop) in enumerate(blocs):
         f, noms = construire_variables(x, config, dmop, voc_commandes)
@@ -603,7 +639,13 @@ def simuler(dossier, x_df, y_init, n_init, dmop=None):
     """Retourner (moyenne, écart-type) de l'ensemble sur toute la grille (heures init comprises)."""
     paquet, config, stats, modeles = charger(dossier)
     torch.set_num_threads(config["threads"])
-    f, noms = construire_variables(x_df, config, dmop, paquet.get("commandes"))
+    init = None
+    if config.get("ajouts_2551"):
+        from baselines import gbm_sacs
+        j = paquet["circuits"].index(gbm_sacs.CIRCUIT_COMMUTATEUR)
+        dernier = gbm_sacs.regime_journalier(x_df.index.to_numpy()[:n_init], y_init[:n_init, j])[-1]
+        init = None if np.isnan(dernier) else float(dernier)
+    f, noms = construire_variables(x_df, config, dmop, paquet.get("commandes"), init)
     if noms != paquet["variables"]:
         raise ValueError("Variables différentes de celles de l'entraînement")
     x = torch.as_tensor(normaliser_entrees(f, stats)[None], dtype=torch.float32)

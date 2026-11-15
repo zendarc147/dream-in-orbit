@@ -9,3 +9,7 @@ runs/
 validation_inverse/
 validation/
 validation_chrono/
+/data/prepared/p5/
+/poids_candidats/**
+!/poids_candidats/**/
+!/poids_candidats/**/INDEX.md

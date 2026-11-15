@@ -25,20 +25,24 @@ import pandas as pd
 
 RACINE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RACINE))
-from outils.valider import DIRECTIONS  # noqa: E402
+from outils.valider import DIRECTIONS, TOUTES  # noqa: E402
 
 CIRCUITS = ["NPWD2551", "NPWD2451"]
 PAS = 0.1
 
 
-def entrainer(nom, options, circuits):
+def entrainer(nom, options, circuits, directions=tuple(DIRECTIONS)):
+    """directions : parmi directe, inverse et chrono (outils/valider.TOUTES)."""
     from baselines import gbm_sacs
-    for direction, (annee, validation) in DIRECTIONS.items():
+    for direction in directions:
+        annee, validation = TOUTES[direction]
         dossier = RACINE / "runs" / nom / direction
         debut = time.time()
-        gbm_sacs.entrainer([annee], dossier, circuits=circuits, **options)
+        gbm_sacs.entrainer([annee] if isinstance(annee, str) else annee, dossier, circuits=circuits, **options)
         gbm_sacs.predire(validation / "test", dossier / "pred.csv", dossier)
         print(f"{nom} {direction} : {time.time() - debut:.0f} s", flush=True)
+    if not set(DIRECTIONS) <= set(directions):
+        return
     scores = mesurer([RACINE / "runs" / nom], circuits)
     (RACINE / "runs" / nom / "scores.json").write_text(json.dumps(scores, indent=2) + "\n")
     print(json.dumps(scores))
@@ -148,6 +152,7 @@ def main():
     e.add_argument("--nom", required=True)
     e.add_argument("--options", default="{}")
     e.add_argument("--circuits", nargs="+", default=CIRCUITS)
+    e.add_argument("--directions", nargs="+", default=list(DIRECTIONS), choices=sorted(TOUTES))
     m = sous.add_parser("melanger")
     m.add_argument("--base", nargs="+", required=True)
     m.add_argument("--composants", nargs="+", required=True)
@@ -161,7 +166,7 @@ def main():
     s.add_argument("--sacs", type=int, default=5)
     args = ap.parse_args()
     if args.action == "entrainer":
-        entrainer(args.nom, json.loads(args.options), args.circuits)
+        entrainer(args.nom, json.loads(args.options), args.circuits, args.directions)
     elif args.action == "empiler":
         empiler(args.nom, args.base, args.circuit, args.config, args.sacs)
     else:

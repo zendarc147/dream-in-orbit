@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent.parent
-UTILISATEUR = "zendarc147"
+UTILISATEUR = "zendarc148"
 DATASET = f"{UTILISATEUR}/dream-in-orbit-code"
 NOYAU = f"{UTILISATEUR}/dream-in-orbit"
 INUTILES = ("docs/",)
@@ -166,7 +166,8 @@ def main():
                 else:
                     courante.append(mot)
             envoyer_donnees(Path(tmp) / "dataset", a.donnees)
-            pousser_noyau(Path(tmp) / "noyau", {"commandes": commandes, "recuperer": a.recuperer}, not a.cpu)
+            pousser_noyau(Path(tmp) / "noyau", {"commandes": commandes, "recuperer": a.recuperer, "gpu": not a.cpu},
+                          not a.cpu)
         print(f"Lancé : https://www.kaggle.com/code/{NOYAU}", flush=True)
         if a.sans_attendre:
             return

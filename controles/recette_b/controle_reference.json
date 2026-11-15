@@ -1,0 +1,18 @@
+{
+  "usage": "Contr\u00f4le des entr\u00e9es uniquement, vocabulaire ann\u00e9es 1+2. Ne pas utiliser ce vocabulaire pour valider un apprentissage ann\u00e9e 1 seule.",
+  "shape": [
+    16488,
+    846
+  ],
+  "dtype": "float32",
+  "grid_first": 1219363200000,
+  "grid_last": 1278716400000,
+  "sha256_float32_C": "7ebb21953d0bb4ee0c568ea79adf1f5b12c34b26e7b1f79e0a5d7d08d743e98c",
+  "sha256_ut_ms_int64": "a9719a8fc0d6d68617683770ea6ee78b987c6d546b67fc01bd9a54a75b6f4792",
+  "tolerance_echantillon_atol": 1e-06,
+  "tolerance_echantillon_rtol": 1e-06,
+  "n_stems": 149,
+  "n_prefixes": 31,
+  "n_switch_stems": 29,
+  "n_ftl_types": 16
+}

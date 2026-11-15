@@ -736,3 +736,50 @@ Détail : `docs/JOURNAL_SPECIALISTES.md`. NPWD2531 : porte de régime par marque
 recalée sur power_init. NPWD2532 : 0.6 × boosting + 0.4 × GRU physique (H1a). Validation, moyenne
 des 4 RMSE : 0.079555 → 0.077972 (directe 0.0767 / 0.0765, inverse 0.0791 / 0.0795) ; les 31 autres
 colonnes sont inchangées au bit près. Installé dans `poids/specialiste/`.
+
+## NPWD2551, programme 2 — 13 novembre 2026
+
+Détail : `docs/JOURNAL_2551.md`. La sous-estimation prolongée de 2551 (21 à 36 % de sa MSE sur les validations
+internes) se concentre aux bascules du réchauffeur, décalées de la saison d'éclipses (corrélation ; cause
+requalifiée au programme 3). Testés sur trois validations
+(directe, inverse, chronologique) : ensemble de 20 XGBoost diversifiés, fenêtres passées et futures de 24 à 720 h
+(ombre, éclipses, flux, pointage), commandes ATTT305/306 (variable et règle « zéro »), modèle niveau lent +
+variations rapides. Les fenêtres futures réduisent les épisodes de sous-estimation mais ajoutent de la
+surestimation : gain en directe seulement. Aucun candidat ni mélange ne baisse dans les 5 cas : rien n'est
+installé, le modèle livré reste (0.076735).
+
+## NPWD2551, programme 3 — 14 novembre 2026
+
+Détail : `docs/JOURNAL_2551.md`. Réglages choisis par validation croisée interne à l'année d'entraînement, poids
+de mélange choisis sur des périodes disjointes (la chrono est incluse dans la directe), règle d'installation plus
+stricte. Diagnostic : 61 à 76 % de la MSE du livré est horaire (cycle du thermostat, peu lié à l'orbite) ; près
+des bascules, le contexte ne place pas la date. Candidats : XGBoost réglé, modèle à deux régimes avec persistance,
+correction de S sur ses résidus hors sac, états de commandes, commutateur AXXX301 reconstruit (ses changements de
+code tombent à ±1 jour des bascules, mais la lettre change d'une année à l'autre et l'état « actif » ne garantit
+pas le chauffage en fin d'annee2). Plusieurs gagnent en interne ; aucun ne se transfère dans les trois validations
+(meilleur cas : commutateur en inverse 0.2054 → 0.1981, mais directe et chrono en forte hausse). Rien n'est
+installé, le modèle livré reste (0.076735). Programme 3 bis : la porte asymétrique « commutateur coupé ⇒ régime
+bas » a été testée à la demande (règle fixée avant la mesure). Le commutateur coupé désigne bien des jours bas
+(99.2–99.5 %), mais forcer un niveau bas constant efface les pointes horaires que le livré suit déjà (directe
+0.2583 → 0.2638, inverse 0.2054 → 0.2044, chrono inchangée) : refusée.
+
+## NPWD2551, programme 4 — recette B reproduite — 14 novembre 2026
+
+Détail : `docs/JOURNAL_2551.md`. Recette indépendante (`controles/recette_b/`) : entrées horaires reproduites au bit
+près (empreinte de contrôle identique, environnement épinglé Python 3.11 / scikit-learn 1.6.1 et environnement du
+projet), HGB à 5 sacs entraîné sur Kaggle T4. Seul, le boosting B fait 0.2786 / 0.2270 / 0.2828 (directe / inverse /
+chrono) contre 0.2678 / 0.2229 / 0.2641 pour le spécialiste livré ; en remplacement de la part boosting de 2551 dans
+le livré : 0.2612 / 0.2080 / 0.2603 contre 0.2583 / 0.2054 / 0.2557. Refusé. Plan factoriel : l'écart vient surtout
+des entrées (+0.009 directe, +0.012 chrono), puis des réglages (+0.001 à +0.005) ; le masque collectif n'a aucun
+effet (masques identiques) ; en inverse, interaction entrées × réglages. Rien n'est installé, le livré reste
+(0.076735).
+
+## NPWD2551, programme 5 — erreur infra-horaire — 15 novembre 2026
+
+Détail : `docs/JOURNAL_2551.md`. Le courant brut de 2551 est une somme de trois lignes de chauffage tout-ou-rien
+(0.205, 0.63, 1.045). 17 candidats testés sur Kaggle : variables ajoutées au boosting (état thermique, EMA lentes,
+orbite exacte, EVTF, blocs de la recette B, saison), un boosting par ligne de chauffage, boosting sur grille de
+10 min, thermostat différentiable, GRU avec entrées 2551, LightGBM, CatBoost. Meilleur : boosting avec état
+thermique en remplacement de la part boosting, 0.2550 / 0.2541 en directe et 0.2042 / 0.2036 en inverse (livré
+0.2583 / 0.2572 et 0.2054 / 0.2046), mais 0.2590 en chrono (livré 0.2557). Aucun candidat ne passe la règle : rien
+installé, le modèle livré reste (0.076735). Candidats gardés : `poids_candidats/npwd2551/INDEX.md`.

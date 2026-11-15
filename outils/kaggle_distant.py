@@ -41,12 +41,22 @@ def main():
     commande = json.loads((DEPOT / "kaggle_commande.json").read_text())
     # ipykernel retiré : inutile ici et lourd à réinstaller.
     exigences = [l for l in (DEPOT / "requirements.txt").read_text().split() if not l.startswith("ipykernel")]
-    lancer(sys.executable, "-m", "pip", "install", "-q", *exigences)
+    # Compte sans internet (non vérifié) : pip échoue, on garde alors les paquets préinstallés de Kaggle.
+    if subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--retries", "1", "--timeout", "15",
+                       *exigences], cwd=DEPOT).returncode:
+        print("pip indisponible : paquets préinstallés de Kaggle", flush=True)
+    lancer(sys.executable, "-c", "import numpy, pandas, sklearn; print('numpy', numpy.__version__, 'pandas',"
+           " pandas.__version__, 'sklearn', sklearn.__version__)")
     lancer(sys.executable, "-c", "import sys, torch; print(sys.version, 'torch', torch.__version__,"
            " 'cuda', torch.cuda.is_available() and torch.cuda.get_device_name(0))")
+    if commande.get("gpu"):  # session GPU demandée mais servie sans GPU (compte non vérifié) : ne rien calculer
+        import torch
+        if not torch.cuda.is_available():
+            sys.exit("GPU demandé mais absent : arrêt sans calcul sur CPU")
     lancer(sys.executable, "outils/reconstruire_power.py")
     lancer(sys.executable, "make_validation.py", "--annee", "data/annee2", "--out", "validation")
     lancer(sys.executable, "make_validation.py", "--annee", "data/annee1", "--out", "validation_inverse")
+    lancer(sys.executable, "outils/faire_chrono.py")
     try:
         for args in commande.get("commandes", [commande.get("args")]):
             print("$", *args, flush=True)

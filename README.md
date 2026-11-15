@@ -39,8 +39,11 @@ variables du GRU les commandes planifiées par famille (heures depuis la derniè
 l'heure et les six heures suivantes, périodes début/fin appariées) et des moyennes
 exponentielles du flux solaire, de l'ombre, du pointage et des communications. Ensemble, graines
 0–4 : 0.0780 / 0.0810 ; graines 5–9 : 0.0778 / 0.0814 (GRU seul : 0.0791 / 0.0836 et
-0.0787 / 0.0842, recalculés en local). Le GRU reste majoritaire et le retour au GRU seul est
-une option de prédiction. Ablations, critères et limites : `docs/JOURNAL_ENSEMBLE.md`.
+0.0787 / 0.0842, recalculés en local). Le GRU n'est plus majoritaire : depuis le 12 novembre,
+réseaux de neurones et boosting pèsent chacun 0.5 du mélange (NPWD2532 : 0.6 boosting + 0.4 réseau).
+Les réseaux restent le world model : eux seuls simulent la période pas à pas à partir de
+power_init ; le boosting, sans état, corrige heure par heure. Le retour au GRU seul est une option
+de prédiction. Ablations, critères et limites : `docs/JOURNAL_ENSEMBLE.md`.
 
 Trois colonnes ont un spécialiste (`poids/specialiste/`, `docs/JOURNAL_SPECIALISTES.md`, `docs/JOURNAL_2551.md`).
 NPWD2531 garde l'ensemble près des familles de commandes qui marquent ses modes (apprises sur
@@ -110,6 +113,13 @@ models déjà installés, ce qui reproduit exactement les poids livrés :
 ```bash
 python train.py --options '{"gru_depuis": "poids", "physique_depuis": "poids/specialiste/physique"}'
 ```
+
+Reproductibilité selon le matériel : l'arrêt anticipé des boostings dépend des calculs en
+virgule flottante. Le boosting de NPWD2551 livré a été entraîné en session CPU (Kaggle) ; le même
+réglage réentraîné sur une session T4 (Python 3.13.16, même scikit-learn 1.9.1) s'arrête à un autre
+nombre d'arbres dans 2 sacs sur 5, d'où un écart de prédiction moyen de 0.0025 (max 0.025) sur ce
+circuit (`docs/JOURNAL_2551.md`, complément du 15 novembre). Un réentraînement sur un autre
+matériel donne donc des poids proches, pas identiques au bit près.
 
 Les données horaires
 sont lues dans `data/prepared/` ; si elles manquent, `dio/prepare.py` les recrée à partir
