@@ -29,12 +29,12 @@ from baselines import gbm_sacs, marqueurs
 from . import donnees, mixte, recette
 
 POIDS_GBM = 0.5  # 0.3 jusqu'au 12 nov. ; 0.5 avec le boosting recette (docs/JOURNAL_RECETTE.md)
-PART_RECETTE = 0.3  # part du GRU recette dans la part GRU
+PART_RECETTE = 0.5  # part du GRU recette dans la part GRU (0.3 avec G2 jusqu'au 16 nov. ; structure C1, docs/JOURNAL_STRUCTURE.md)
 # Recette R (docs/JOURNAL_RECETTE.md, E22b) : options de baselines/gbm_sacs.entrainer.
 GBM_DEFAUT = {"config": "D", "jeu": "V2", "compresser": True, "familles_variante": True, "plan": {"changements": True, "recence": "debut", "prefixes": True, "paires": "liste"}, "contexte": {"soleil": "interpole", "ltdata": "lineaire"}, "ajouts": ["planning", "ema", "geometrie", "altitude", "ombres", "contacts", "decalages", "histoires", "face_sa_moins"], "embargo_h": 0, "filtre": False, "retirer": ["lettres", "distance_terre", "ema"]}
 # World model du spécialiste de NPWD2532 : configuration de l'essai H1a (docs/RESULTATS.md).
 PHYSIQUE = {"physique": True, "familles": False, "facteur_niveau_prediction": 1.0}
-RECETTE = {"reinjection": False}
+RECETTE = {"variables": "S", "reinjection": False, "normalisation": "minmax"}  # GRU S borné ; G2 = {"reinjection": False}
 SPECIALISTES = {"NPWD2532": {"gbm": 0.6, "physique": 0.4}, "NPWD2531": {"porte": "marqueurs"},
                 "NPWD2551": {"gbm_specialiste": {"config": "D3L", "ajouts": GBM_DEFAUT["ajouts"] + ["orbite"]}}}
 

@@ -4,6 +4,7 @@
     python outils/structure.py predire [--travaux 4]
     python outils/structure.py bilan
     python outils/structure.py decider
+    python outils/structure.py finaux    # poids annee1 + annee2 de chaque candidat -> poids_candidats/structure/
 
 Candidats (liste fermée) : L (livré), C1, T1, T2, T3 ; variantes : GRU S à 10 graines (groupe g10), T3 sans recalage
 (T3sr : dossier de T3, predict.py --options '{"recalage": 0.0}'). Validations : directe, inverse, c50, c62, c75, c87.
@@ -248,6 +249,94 @@ def bilan():
     (SORTIE / "bilan.json").write_text(json.dumps(resultats, indent=1) + "\n")
 
 
+# ---------------------------------------------------------------- sobriété des composants
+
+def _arbres(estimateurs):
+    """(colonnes lues par au moins une coupure, nombre d'arbres) d'une liste d'HGB."""
+    lues, n = set(), 0
+    for m in estimateurs:
+        for iteration in getattr(m, "_predictors", []):
+            for arbre in iteration:
+                noeuds = arbre.nodes
+                lues |= set(noeuds["feature_idx"][~noeuds["is_leaf"].astype(bool)].tolist())
+                n += 1
+    return lues, n
+
+
+def sobriete_composant(dossier):
+    import lzma
+    import pickle
+    import torch
+    d = Path(dossier)
+    if (d / "recette.pt").is_file():
+        p = torch.load(d / "recette.pt", weights_only=True)
+        return {"type": "GRU recette", "entrees": len(p["variables"]), "graines": len(p["etats"])}
+    if (d / "membres.json").is_file():
+        m = [torch.load(x / "monde.pt", weights_only=True) for x in sorted(d.glob("membre[0-9]*"))]
+        return {"type": "GRU mixte", "entrees_par_membre": [len(x["variables"]) for x in m],
+                "graines": sum(len(x["etats"]) for x in m)}
+    if (d / "modele_b.pkl.xz").is_file():
+        with lzma.open(d / "modele_b.pkl.xz", "rb") as f:
+            p = pickle.load(f)
+        lues, n = _arbres(p["modeles"])
+        return {"type": "recette B", "colonnes": len(p["colonnes"]), "colonnes_lues": len(lues), "arbres": n}
+    chemin = d / "gbm_sacs.pkl"
+    with (open(chemin, "rb") if chemin.exists() else lzma.open(chemin.with_suffix(".pkl.xz"), "rb")) as f:
+        p = pickle.load(f)
+    lues, n = _arbres([m for sac in p["modeles"] for m in sac])
+    return {"type": "gbm_sacs", "colonnes": len(p["colonnes"]), "colonnes_lues": len(lues), "arbres": n,
+            "circuits": len(p["circuits"])}
+
+
+def sobriete():
+    """Composants de la directe (même définition partout) : colonnes lues, arbres, entrées."""
+    d = "directe"
+    comp = {"GRU mixte": f"rc0_livre_g04/{d}", "G2": f"rc0_livre_g04/{d}/recette", "GRU S (5 g)": f"rc3_gruA_norm/{d}",
+            "R": f"rc0_livre_g04/{d}/gbm", "S": f"rc1_gbm_S/{d}", "D3L (NPWD2551)": f"rc0_livre_g04/{d}/specialiste/gbm_NPWD2551",
+            "B (NPWD2551)": "st_B_directe", "physique (NPWD2532)": f"rc0_livre_g04/{d}/specialiste/physique"}
+    sortie = {k: sobriete_composant(RACINE / "runs" / v) for k, v in comp.items() if (RACINE / "runs" / v).exists()}
+    SORTIE.mkdir(parents=True, exist_ok=True)
+    (SORTIE / "sobriete.json").write_text(json.dumps(sortie, indent=1) + "\n")
+    print(json.dumps(sortie, indent=1))
+
+
+# ---------------------------------------------------------------- poids finaux de chaque candidat
+
+FINAUX = RACINE / "poids_candidats" / "structure"
+
+
+def finaux():
+    """Dossier de poids complet (annee1 + annee2) de chaque candidat, installé ou non : base = poids/ (livré :
+    GRU mixte, G2, R, D3L, physique, marqueurs) ; composants nouveaux = runs/st_final_* (Kaggle S4)."""
+    import os
+    import shutil
+    if not (RACINE / "runs" / "st_final_gruS10" / "recette.pt").is_file():
+        from outils.fusionner_recette import fusionner
+        fusionner(RACINE / "runs" / "st_final_gruS_g04", RACINE / "runs" / "st_final_gruS_g59",
+                  RACINE / "runs" / "st_final_gruS10")
+    base = ["--base", "../poids", "--directions", "final"]
+    specs = {"L": [], "C1_g5": ["--recette", "st_final_gruS_g04", "--part", 0.5]}
+    for g, gru in (("g10", "st_final_gruS10"), ("g5", "st_final_gruS_g04")):
+        r = ["--recette", gru, "--part", 1]
+        specs[f"T1_{g}"] = r
+        specs[f"T2_{g}"] = r + ["--gbm2", "st_final_gbmS", "--poids-gbm2", 0.5, "--b", "st_final_B", "--part-b", 0.5]
+        specs[f"T3_{g}"] = specs[f"T3sr_{g}"] = r + ["--gbm", "st_final_gbmS", "--b", "st_final_B", "--part-b", 1]
+    for c, spec in specs.items():
+        cible = FINAUX / c
+        if cible.exists():
+            shutil.rmtree(cible)
+        candidat("--nom", f"st_fin_{c}", *base, *spec)
+        cible.parent.mkdir(parents=True, exist_ok=True)
+        os.rename(RACINE / "runs" / f"st_fin_{c}" / "final", cible)
+        (RACINE / "runs" / f"st_fin_{c}").rmdir()
+        if c.startswith("T3sr"):  # même dossier que T3, prédiction sans recalage de la part boosting
+            meta = json.loads((cible / "modele.json").read_text())
+            meta["options_prediction"] = {**meta.get("options_prediction", {}), "recalage": 0.0}
+            (cible / "modele.json").unlink()
+            (cible / "modele.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
+        print(c, "->", cible.relative_to(RACINE), flush=True)
+
+
 # ---------------------------------------------------------------- décision mécanique
 
 def score(r, cand, v, g):
@@ -307,7 +396,7 @@ def decider():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("action", choices=["assembler", "predire", "bilan", "decider"])
+    ap.add_argument("action", choices=["assembler", "predire", "bilan", "decider", "sobriete", "finaux"])
     ap.add_argument("--validations", nargs="+", default=VALIDATIONS)
     ap.add_argument("--candidats", nargs="+", default=CANDIDATS)
     ap.add_argument("--controles", action="store_true")
@@ -322,6 +411,10 @@ def main():
             list(pool.map(predire_un, t))
     elif a.action == "bilan":
         bilan()
+    elif a.action == "sobriete":
+        sobriete()
+    elif a.action == "finaux":
+        finaux()
     else:
         decider()
 

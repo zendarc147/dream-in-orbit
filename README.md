@@ -23,7 +23,18 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + spécialistes : porte de régime par marqueurs pour NPWD2531, boosting + GRU physique pour NPWD2532 | 0.0767 | 0.0791 | 0.0779 |
 | + boosting « recette » (familles corrigées, événements de commande, géométrie exacte, décalages, réglage avec arrêt anticipé) et GRU recette à 0.3 dans la part GRU | 0.0753 | 0.0787 | 0.0770 |
 | + poids du boosting 0.5 au lieu de 0.3 ; GRU principal sans encodages par lettre de variante | 0.0751 | 0.0785 | 0.0768 |
-| **+ boosting propre à NPWD2551 (D3L, variables d'orbite), modèle final** | **0.0750** | **0.0785** | **0.0767** |
+| + boosting propre à NPWD2551 (D3L, variables d'orbite), livré jusqu'au 15 novembre (`poids_repli/`) | 0.0750 | 0.0785 | 0.0767 |
+| **Structure C1 : GRU recette remplacé par un GRU S borné (165 entrées au lieu de 236), moitié de la part GRU, modèle final** | **0.0744** | **0.0782** | **0.0763** |
+
+Structure choisie pour sa sobriété sur décision de l'utilisateur ; elle ne maximise pas la validation interne.
+Modèle final (16 novembre, `docs/JOURNAL_STRUCTURE.md`) : 0.5 × (0.5 GRU mixte + 0.5 GRU S borné) + 0.5 × boosting R,
+mêmes spécialistes. **Part du réseau : 0.5 du mélange** (NPWD2532 : 0.4). Moyenne des 4 RMSE (directe, inverse,
+graines 0–4 et 5–9) : 0.076288 contre 0.076735 pour le livré précédent. Sur la validation à origine glissante (quatre
+coupures, réentraînement à chaque coupure), C1 fait mieux sur les deux premières coupures et moins bien sur les deux
+plus récentes (+0.0015 et +0.0031) ; moyenne des coupures 0.072482 contre 0.071885. Il passe les garde-fous fixés
+avant mesure ; les structures plus sobres (GRU S seul, boosting S, recette B) cèdent toutes sur la dernière coupure
+(+0.008 à +0.009, NPWD2551 et NPWD2451 surestimés). Le livré précédent reste dans `poids_repli/`, les poids de tous
+les candidats dans `poids_candidats/structure/`.
 
 Les deux derniers changements viennent d'une enquête sur l'erreur d'une année à l'autre.
 Les familles de commandes sont des comptes horaires par code dmop sans lettre de variante
@@ -33,7 +44,7 @@ corrige une correction apprise trop faible. Graines 5–9 : 0.0787 / 0.0843. Gai
 directions et sur plusieurs circuits ; NPWD2532 se dégrade. Détail, critères et limites dans
 `docs/RESULTATS.md`, section « Généralisation d'une année à l'autre ».
 
-Le modèle du 11 novembre était un ensemble : 0.7 × world model GRU + 0.3 × boosting à sacs temporels (depuis le 12 novembre : 0.5 × GRU, dont 30 % de GRU recette, + 0.5 × boosting recette)
+Le modèle du 11 novembre était un ensemble : 0.7 × world model GRU + 0.3 × boosting à sacs temporels (depuis le 12 novembre : 0.5 × GRU, dont 30 % de GRU recette, + 0.5 × boosting recette ; depuis le 16 novembre, le GRU recette est un GRU S borné et pèse 50 % de la part GRU)
 (un HistGradientBoosting par circuit, 5 sacs). Le boosting, sans mémoire, reçoit en plus des
 variables du GRU les commandes planifiées par famille (heures depuis la dernière, comptes dans
 l'heure et les six heures suivantes, périodes début/fin appariées) et des moyennes

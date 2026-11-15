@@ -28,5 +28,17 @@
       4
     ]
   },
-  "note": "GRU mixte (membre0/1) entraîné à part par train.py --modele gru_mixte avec options_gru_mixte (docs/JOURNAL_RECETTE.md), puis repris par gru_depuis"
+  "note": "GRU mixte (membre0/1) entraîné à part par train.py --modele gru_mixte avec options_gru_mixte (docs/JOURNAL_RECETTE.md), puis repris par gru_depuis ; GRU recette (recette/) = GRU S borné, train.py --modele gru_recette --options options_recette, repris par recette_depuis (structure C1, docs/JOURNAL_STRUCTURE.md). Livré précédent : poids_repli/.",
+  "options_recette": {
+    "variables": "S",
+    "reinjection": false,
+    "normalisation": "minmax",
+    "graines": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  }
 }

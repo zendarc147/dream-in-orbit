@@ -783,3 +783,27 @@ orbite exacte, EVTF, blocs de la recette B, saison), un boosting par ligne de ch
 thermique en remplacement de la part boosting, 0.2550 / 0.2541 en directe et 0.2042 / 0.2036 en inverse (livré
 0.2583 / 0.2572 et 0.2054 / 0.2046), mais 0.2590 en chrono (livré 0.2557). Aucun candidat ne passe la règle : rien
 installé, le modèle livré reste (0.076735). Candidats gardés : `poids_candidats/npwd2551/INDEX.md`.
+
+## Structure sobre de l'ensemble — 16 novembre 2026
+
+Détail : `docs/JOURNAL_STRUCTURE.md`. Orientation imposée par l'utilisateur (sobriété avant le dernier millième),
+liste fermée de structures et règle écrites avant mesure : garde-fous sur les 4 RMSE temporelles (directe, inverse,
+graines 0–4 et 5–9) et sur une validation à origine glissante à quatre coupures (c50, c62, c75, c87 ; réentraînement
+complet sur Kaggle T4 à chaque coupure), puis choix du premier admissible par ordre de sobriété. Écarts au livré
+(moyenne des 4 / moyenne des coupures / pire coupure c87) :
+
+| Structure | Moy. 4 | Moy. coupures | c87 | Verdict |
+|---|---:|---:|---:|---|
+| Livré (GRU mixte + 0.3 G2, R, D3L) | 0.076735 | 0.071885 | 0.067998 | repli (`poids_repli/`) |
+| T3 sans recalage, 10 g (GRU S ; S ; B) | +0.0011 | +0.0024 | +0.0082 | refusé |
+| T3, 10 g | +0.0008 | +0.0023 | +0.0084 | refusé |
+| T2, 10 g (GRU S ; (R + S)/2 ; (D3L + B)/2) | +0.0003 | +0.0019 | +0.0086 | refusé (c87) |
+| T1, 10 g (GRU S ; R ; D3L) | +0.00004 | +0.0019 | +0.0090 | refusé (c87) |
+| **C1 (0.5 GRU mixte + 0.5 GRU S ; R ; D3L)** | **−0.00045** | **+0.0006** | **+0.0031** | **installé** |
+
+Les variantes à 5 graines sont à 0.00003 près des 10 graines. Le GRU S seul comme part GRU surestime NPWD2551 et
+NPWD2451 sur la dernière coupure (76–81 % et 20–24 % de la hausse d'erreur). C1 est installé (modèle final, moyenne
+des 4 : 0.076288) ; il est moins bon que le livré sur c75 (+0.0015) et c87 (+0.0031), sous les seuils fixés mais bien
+au-dessus du bruit des coupures (0.0001 à 0.0004) : le journal signale ce seuil comme trop large, sans le changer.
+Structure choisie pour sa sobriété sur décision de l'utilisateur ; elle ne maximise pas la validation interne.
+Part du réseau : 0.5 du mélange. Poids de tous les candidats : `poids_candidats/structure/INDEX.md`.

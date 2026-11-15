@@ -1,0 +1,26 @@
+{
+  "NPWD2532": {
+    "gbm": 0.6,
+    "physique": 0.4
+  },
+  "NPWD2531": {
+    "porte": "marqueurs"
+  },
+  "NPWD2551": {
+    "gbm_specialiste": {
+      "config": "D3L",
+      "ajouts": [
+        "planning",
+        "ema",
+        "geometrie",
+        "altitude",
+        "ombres",
+        "contacts",
+        "decalages",
+        "histoires",
+        "face_sa_moins",
+        "orbite"
+      ]
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "modele": "gru_gbm",
+  "annees": [
+    "annee1",
+    "annee2"
+  ],
+  "options": {
+    "gru_depuis": "poids",
+    "physique_depuis": "poids/specialiste/physique",
+    "recette_depuis": "poids/recette"
+  },
+  "options_gru_mixte": {
+    "masque_saaf": 0.1,
+    "borne_niveau_prediction": 10.0,
+    "familles": true,
+    "facteur_niveau_prediction": 1.5,
+    "commandes": null,
+    "branche_commandes": null,
+    "familles_variante": true,
+    "retirer": [
+      "dmop_(?!other_count|total_count)\\w+_count"
+    ],
+    "graines": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "note": "GRU mixte (membre0/1) entraîné à part par train.py --modele gru_mixte avec options_gru_mixte (docs/JOURNAL_RECETTE.md), puis repris par gru_depuis"
+}
