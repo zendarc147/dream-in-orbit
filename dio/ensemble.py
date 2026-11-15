@@ -73,6 +73,12 @@ def entrainer_specialistes(annees, dossier, physique_depuis=None, gbm_depuis=Non
     """gbm_depuis : dossier contenant des gbm_<circuit>/ déjà entraînés sur les mêmes années, copiés."""
     specialiste = Path(dossier) / "specialiste"
     for c, regle in SPECIALISTES.items():
+        if regle.get("recette_b"):
+            if gbm_depuis and (Path(gbm_depuis) / f"b_{c}").is_dir():
+                shutil.copytree(Path(gbm_depuis) / f"b_{c}", specialiste / f"b_{c}", dirs_exist_ok=True)
+            else:
+                from baselines import recette_b
+                recette_b.entrainer(annees, specialiste / f"b_{c}")
         if "gbm_specialiste" not in regle:
             continue
         if gbm_depuis:
@@ -93,38 +99,65 @@ def entrainer_specialistes(annees, dossier, physique_depuis=None, gbm_depuis=Non
 
 
 def predire(test_dir, out, dossier, poids_gbm=None, sortie_incertitude=None, recalage=1.0, demi_vie=1440,
-            specialistes=True, part_recette=None):
+            specialistes=True, part_recette=None, parts=False):
+    """parts : écrire aussi la part GRU, la part boosting et le mélange avant les spécialistes 2531/2532
+    (dossier <out>.parts/, avec les temps par composant) ; la prédiction ne change pas.
+    ensemble.json peut porter "gbm2" : poids d'un second boosting (dossier gbm2/) dans la part boosting
+    (docs/JOURNAL_STRUCTURE.md). part_recette = 1 : le GRU mixte n'est pas chargé."""
+    import time
     dossier = Path(dossier)
     reglages = json.loads((dossier / "ensemble.json").read_text())
     if poids_gbm is None:
         poids_gbm = reglages["poids_gbm"]
     if part_recette is None:
         part_recette = reglages.get("part_recette", 0.0)
-    gru = mixte.predire(test_dir, out, dossier, sortie_incertitude)
+    temps = {}
+    debut = time.time()
+    gru = mixte.predire(test_dir, out, dossier, sortie_incertitude) if part_recette != 1 else None
+    temps["gru_mixte"] = time.time() - debut
     if part_recette:
+        debut = time.time()
         with tempfile.TemporaryDirectory() as temp:
             autre = recette.predire(test_dir, Path(temp) / "recette.csv", dossier / "recette", recalage=1.0)
-        gru = (1 - part_recette) * gru + part_recette * autre
+        gru = autre if gru is None else (1 - part_recette) * gru + part_recette * autre
+        temps["gru_recette"] = time.time() - debut
     if not poids_gbm:
         return donnees.ecrire_predictions(gru.index.to_numpy(), np.clip(gru.to_numpy(), 0, None), gru.index.to_numpy(),
                                           list(gru.columns), out)
+    debut = time.time()
     with tempfile.TemporaryDirectory() as temp:
         gbm = gbm_sacs.predire(test_dir, Path(temp) / "gbm.csv", dossier / "gbm", recalage, demi_vie)
+        if reglages.get("gbm2"):
+            gbm = (1 - reglages["gbm2"]) * gbm + reglages["gbm2"] * gbm_sacs.predire(
+                test_dir, Path(temp) / "gbm2.csv", dossier / "gbm2", recalage, demi_vie)
+    temps["gbm"] = time.time() - debut
     if not gru.index.equals(gbm.index) or list(gru.columns) != list(gbm.columns):
         raise ValueError("Heures ou circuits différents entre GRU et boosting")
     specialiste = dossier / "specialiste"
     specialistes = specialistes and (specialiste / "specialistes.json").is_file()
+    debut = time.time()
     if specialistes:
         gbm = gbm_specialistes(test_dir, specialiste, gbm, recalage, demi_vie)
+    temps["gbm_specialistes"] = time.time() - debut
     melange = (1 - poids_gbm) * gru + poids_gbm * gbm
+    brut = melange
+    debut = time.time()
     if specialistes:
         melange = appliquer_specialistes(test_dir, specialiste, melange, gbm)
+    temps["specialistes_2531_2532"] = time.time() - debut
+    if parts:
+        sortie = Path(str(out) + ".parts")
+        sortie.mkdir(parents=True, exist_ok=True)
+        for nom, t in (("gru", gru), ("gbm", gbm), ("melange", brut)):
+            t.to_csv(sortie / f"{nom}.csv")
+        (sortie / "temps.json").write_text(json.dumps({k: round(v, 1) for k, v in temps.items()}, indent=1) + "\n")
     return donnees.ecrire_predictions(melange.index.to_numpy(), np.clip(melange.to_numpy(), 0, None),
                                       melange.index.to_numpy(), list(melange.columns), out)
 
 
 def gbm_specialistes(test_dir, specialiste, gbm, recalage, demi_vie):
-    """Remplacer la part boosting des circuits qui ont leur propre boosting (gbm_<circuit>/)."""
+    """Remplacer la part boosting des circuits qui ont leur propre boosting (gbm_<circuit>/), et/ou la recette B
+    (b_<circuit>/, poids "recette_b" : (1 - w) × boosting propre + w × B, B seule sans boosting propre)."""
     regles = json.loads((specialiste / "specialistes.json").read_text())
     gbm = gbm.copy()
     with tempfile.TemporaryDirectory() as temp:
@@ -132,6 +165,13 @@ def gbm_specialistes(test_dir, specialiste, gbm, recalage, demi_vie):
             if "gbm_specialiste" in regle:
                 gbm[c] = gbm_sacs.predire(test_dir, Path(temp) / f"{c}.csv", specialiste / f"gbm_{c}",
                                           recalage, demi_vie)[c]
+            if regle.get("recette_b"):
+                from baselines import recette_b
+                b = recette_b.predire(test_dir, None, specialiste / f"b_{c}")[c].reindex(gbm.index)
+                if b.isna().any():
+                    raise ValueError(f"recette B : heures manquantes pour {c}")
+                w = regle["recette_b"] if "gbm_specialiste" in regle else 1.0
+                gbm[c] = b if w == 1 else (1 - w) * gbm[c] + w * b
     return gbm
 
 

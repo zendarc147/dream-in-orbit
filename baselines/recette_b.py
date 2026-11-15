@@ -441,7 +441,7 @@ def moyenne(modeles, x):
     return np.mean([m.predict(x) for m in modeles], axis=0)
 
 
-def predire(modeles, x):
+def predire_sacs(modeles, x):
     """§11 : moyenne des 5 sacs, puis bornage à 0 (aucun recalage)."""
     return np.clip(moyenne(modeles, x), 0, None)
 
@@ -453,3 +453,52 @@ def hors_bloc(modeles, x):
     for i, m in enumerate(modeles):
         sortie[b[i]:b[i + 1]] = np.clip(m.predict(x[b[i]:b[i + 1]]), 0, None)
     return sortie
+
+
+# ---------------------------------------------------------------- modèle installable (docs/JOURNAL_STRUCTURE.md)
+
+RACINE = Path(__file__).resolve().parent.parent
+
+
+def _periode(nom):
+    """annee1 -> data/annee1 ; sinon un chemin (ex. validation_glissant/c62/entrainement)."""
+    return RACINE / "data" / nom if (RACINE / "data" / nom).is_dir() else Path(nom)
+
+
+def entrainer(annees, dossier, n_jobs=5, **_):
+    """Recette B stricte : vocabulaire des seules périodes d'entraînement, 5 sacs PARAMS_B, masque collectif,
+    sans recalage ; paquet modele_b.pkl.xz (modèles, vocabulaire, colonnes)."""
+    import lzma
+    import pickle
+    tables = [lire(_periode(a)) for a in annees]
+    vocab = apprendre(tables)
+    parts = [periode(_periode(a), vocab) for a in annees]
+    x = pd.concat([p[1] for p in parts])
+    y33 = np.concatenate([p[3] for p in parts])
+    circuits = parts[0][2]
+    garder = masque(y33, circuits)
+    modeles = ajuster(x.to_numpy(np.float32), y33[:, circuits.index(CIBLE)], garder, PARAMS_B, n_jobs)
+    dossier = Path(dossier)
+    dossier.mkdir(parents=True, exist_ok=True)
+    with lzma.open(dossier / "modele_b.pkl.xz", "wb") as f:
+        pickle.dump({"modeles": modeles, "vocab": vocab, "colonnes": list(x.columns)}, f)
+    (dossier / "info.json").write_text(pd.Series({
+        "annees": list(annees), "lignes": len(x), "colonnes": x.shape[1], "masque_lignes": int(garder.sum()),
+        "iterations": [int(m.n_iter_) for m in modeles]}).to_json(indent=1) + "\n")
+
+
+def predire(test_dir, out, dossier, **_):
+    """NPWD2551 sur les heures à prédire (DataFrame indexé par ut_ms), bornée à 0, sans recalage."""
+    import lzma
+    import pickle
+    with lzma.open(Path(dossier) / "modele_b.pkl.xz", "rb") as f:
+        paquet = pickle.load(f)
+    gt, xt, a_predire, _, _, _ = test(test_dir, paquet["vocab"])
+    if list(xt.columns) != paquet["colonnes"]:
+        raise ValueError("recette B : colonnes différentes de celles de l'entraînement")
+    t = pd.DataFrame({CIBLE: predire_sacs(paquet["modeles"], xt.to_numpy(np.float32))},
+                     index=pd.Index(gt, name="ut_ms")).reindex(a_predire)
+    if out:
+        t.to_csv(out)
+    return t
+

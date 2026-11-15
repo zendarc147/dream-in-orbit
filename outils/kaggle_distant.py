@@ -57,6 +57,7 @@ def main():
     lancer(sys.executable, "make_validation.py", "--annee", "data/annee2", "--out", "validation")
     lancer(sys.executable, "make_validation.py", "--annee", "data/annee1", "--out", "validation_inverse")
     lancer(sys.executable, "outils/faire_chrono.py")
+    lancer(sys.executable, "outils/faire_chrono.py", "--glissant")
     try:
         for args in commande.get("commandes", [commande.get("args")]):
             print("$", *args, flush=True)

@@ -10,6 +10,7 @@ MODELES = {
     "gru_gbm": "dio.ensemble",
     "gru_ar": "dio.autoregressif",
     "gru_recette": "dio.recette",
+    "recette_b": "baselines.recette_b",
 }
 FINAL = "gru_gbm"
 
