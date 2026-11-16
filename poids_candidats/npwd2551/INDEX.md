@@ -70,4 +70,4 @@ Part 0.175 à la place du membre v2r du GRU livré. Mélange : directe g04 / g59
 | gru_th (echelles, saison, thermique) | `runs/p5_gru_th` | 0.2647 / 0.2635 / 0.2112 / 0.2116 / 0.2591 | refusé : pire dans les 5 cas |
 | gru_etats (+ etats, commutateur) | `runs/p5_gru_etats` | 0.2623 / 0.2614 / 0.2084 / 0.2087 / 0.2594 | refusé : pire dans les 5 cas |
 
-Bilans complets : `runs/p5_bilan_s{1,2,3,4,5,6}/bilan.json`. Détail : `docs/JOURNAL_2551.md`, programme 5.
+Bilans complets : `runs/p5_bilan_s{1,2,3,4,5,6}/bilan.json`. Détail : `docs/journaux/JOURNAL_2551.md`, programme 5.

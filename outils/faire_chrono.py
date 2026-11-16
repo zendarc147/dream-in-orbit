@@ -1,7 +1,7 @@
 """Validation chronologique : annee1 + première moitié d'annee2 -> seconde moitié d'annee2.
 
     python outils/faire_chrono.py
-    python outils/faire_chrono.py --glissant   # validation_glissant/c50, c62, c75, c87 (docs/JOURNAL_STRUCTURE.md)
+    python outils/faire_chrono.py --glissant   # validation_glissant/c50, c62, c75, c87 (docs/journaux/JOURNAL_STRUCTURE.md)
 
 Écrit validation_chrono/entrainement/ (période d'entraînement au format du kit : power.csv et contextes avant la
 coupure) et validation_chrono/test/ + verite_horaire.csv (make_validation.construire sur la seconde moitié :

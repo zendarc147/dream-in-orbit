@@ -4,7 +4,7 @@ Poids complets entraînés sur annee1 + annee2, un dossier par candidat, install
 finaux`). Base = livré (GRU mixte, G2, R, D3L, physique, marqueurs de `poids_repli/`) ; GRU S borné, S et B : Kaggle
 `zendarc148` S4 (`runs/st_final_*`). NPWD2532 et NPWD2531 : spécialistes du livré partout. Chaque dossier se lit par
 `python predict.py --poids poids_candidats/structure/<nom>` (vérifié pour les 10 : 3953 × 33 valeurs finies ≥ 0).
-Règle, mesures et limites : `docs/JOURNAL_STRUCTURE.md`. Écarts au livré : Δ moyenne des 4 RMSE temporelles,
+Règle, mesures et limites : `docs/journaux/JOURNAL_STRUCTURE.md`. Écarts au livré : Δ moyenne des 4 RMSE temporelles,
 Δ moyenne des coupures glissantes, Δ pire coupure (c87).
 
 | Nom | Structure | Δ moy. 4 | Δ moy. coupures | Δ c87 | Verdict |

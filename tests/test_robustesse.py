@@ -1,5 +1,4 @@
 """Régularisations de robustesse : masquage SAAF par blocs et abandon groupé des états de commandes."""
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -66,24 +65,10 @@ class AbandonEtatsTest(unittest.TestCase):
 
 
 class CompatibiliteTest(unittest.TestCase):
-    @unittest.skipUnless((RACINE / "poids/membres.json").is_file(), "poids/ absent")
+    @unittest.skipUnless((RACINE / "poids/specialiste/physique/membres.json").is_file(), "poids/ absent")
     def test_poids_finaux_se_rechargent(self):
         for membre in ("membre0", "membre1"):
-            self.assertEqual(len(monde.charger(RACINE / "poids" / membre)[3]), 5)
-
-    def test_anciens_poids_sans_regularisations_se_rechargent(self):
-        """Poids d'avant les régularisations (commit 8fa1d0e) : options absentes, valeurs par défaut nulles."""
-        for membre in ("membre0", "membre1"):
-            ancien = subprocess.run(["git", "show", f"8fa1d0e:poids/{membre}/monde.pt"], cwd=RACINE,
-                                    capture_output=True)
-            if ancien.returncode:
-                self.skipTest("historique Git absent")
-            with tempfile.TemporaryDirectory() as temp:
-                (Path(temp) / "monde.pt").write_bytes(ancien.stdout)
-                _, config, _, modeles = monde.charger(temp)
-            self.assertNotIn("masque_saaf", config)
-            self.assertNotIn("abandon_etats", config)
-            self.assertEqual(len(modeles), 5)
+            self.assertEqual(len(monde.charger(RACINE / "poids/specialiste/physique" / membre)[3]), 5)
 
 
 @unittest.skipUnless(DONNEES, "données préparées absentes")
@@ -113,24 +98,6 @@ class EntrainementTest(unittest.TestCase):
             a = modele(x[:, :168], y, x[:, 168:])
             torch.manual_seed(2)
             torch.testing.assert_close(modele(x[:, :168], y, x[:, 168:]), a, rtol=0, atol=0)
-
-    def test_bloc_exclu_absent_des_statistiques(self):
-        """Hors bloc : les courants du bloc écarté (et de sa marge) ne touchent pas l'entraînement."""
-        _, _, y = donnees.charger_annee("annee1")
-        n, (a, b) = len(y), (5496, 10992)
-        with tempfile.TemporaryDirectory() as temp:
-            paquet = self.entrainer(Path(temp) / "hors", exclure=[a / n, b / n])
-        gardees = np.concatenate([y[:a - 168], y[b + 168:]])
-        np.testing.assert_allclose(paquet["stats"]["y_moyenne"].numpy(), np.nanmean(gardees, axis=0))
-
-
-class ExclusionTest(unittest.TestCase):
-    def test_morceaux_autour_du_bloc(self):
-        heures = np.arange(1000)
-        x = pd.DataFrame({"a": np.arange(1000.0)}, index=heures)
-        morceaux = monde.exclure_bloc((heures, x, np.arange(1000.0)[:, None], None), 0.4, 0.6, marge=50)
-        self.assertEqual([(m[0][0], m[0][-1]) for m in morceaux], [(0, 349), (650, 999)])
-        self.assertEqual(len(monde.exclure_bloc((heures, x, x.to_numpy(), None), 0.0, 0.5, marge=50)), 1)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 """Démo « rêve contre réalité » sur la validation directe, avec la bande d'incertitude.
 
-    python outils/demo.py --poids runs/NOM/directe --out docs/demo/reve_contre_realite.png
+    python outils/valider.py --nom final            # entraîne runs/final/directe sur annee1 seule
+    python outils/demo.py --poids runs/final/directe --out docs/demo/reve_contre_realite.png
 
 Le modèle doit avoir été entraîné sans la période affichée (validation directe :
-entraînement sur annee1 seul, affichage d'annee2). La bande = ± 2 écarts-types de
-l'ensemble (tous les modèles de tous les membres). Produit aussi la courbe de dérive (RMSE glissante sur 7 jours).
+entraînement sur annee1 seul, affichage d'annee2). La bande = ± 2 écarts-types des 20 GRU
+de la part réseau (dispersion de l'ensemble). Produit aussi la courbe de dérive (RMSE glissante sur 7 jours).
 """
 import argparse
 import json

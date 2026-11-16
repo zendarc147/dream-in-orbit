@@ -10,7 +10,7 @@ from baselines import gbm_sacs, recette_b as rb
 
 H = rb.H
 RACINE = Path(__file__).resolve().parent.parent
-CONTROLES = RACINE / "controles" / "recette_b"
+CONTROLES = RACINE / "tests" / "controles" / "recette_b"
 
 
 class TestConventions(unittest.TestCase):
@@ -48,7 +48,6 @@ class TestConventions(unittest.TestCase):
         np.testing.assert_allclose(o["ev_orbit_period_h"], [7, 7, 7])
 
     def test_reglages(self):
-        self.assertEqual(rb.D3L, gbm_sacs.REGLAGES["D3L"])
         self.assertEqual(rb.PARAMS_B, json.loads((CONTROLES / "parametres_reference.json").read_text()))
         n = 1003
         np.testing.assert_array_equal(rb.bornes(n), np.linspace(0, n, 6).astype(int))
@@ -56,24 +55,7 @@ class TestConventions(unittest.TestCase):
             b = rb.bornes(n)
             np.testing.assert_array_equal(bloc, np.arange(b[i], b[i + 1]))
 
-    def test_ajustement_identique_au_livre(self):
-        """Cellule d3l, masque propre : mêmes arbres que gbm_sacs._ajuster (même graine, mêmes lignes)."""
-        hasard = np.random.default_rng(0)
-        x = hasard.normal(size=(600, 4))
-        y = x[:, 0] + hasard.normal(scale=0.1, size=600)
-        y[::7] = np.nan
-        reglage = {**rb.REGLAGES["d3l"], "max_iter": 20}
-        gbm_sacs.REGLAGES["_test"] = {k: v for k, v in reglage.items() if k not in ("loss", "random_state")}
-        try:
-            modeles = rb.ajuster(x, y, np.isfinite(y), reglage, n_jobs=1)
-            for (lignes, _), m in zip(gbm_sacs.sacs_temporels(600, 5, 0), modeles):
-                ref = gbm_sacs._ajuster(x, y, lignes, "_test", 0)
-                np.testing.assert_array_equal(ref.predict(x), m.predict(x))
-        finally:
-            del gbm_sacs.REGLAGES["_test"]
 
-
-@unittest.skipUnless((RACINE / "data/annee1/power.csv").exists(), "données absentes")
 class TestControle(unittest.TestCase):
     def test_entrees_annee1_vocabulaire_de_controle(self):
         vocab = json.loads((CONTROLES / "vocabulaire_reference.json").read_text())

@@ -19,7 +19,7 @@ Les temps de cette session sont tous mesurés sur cette machine ; ceux des journ
 
 ## Critères de décision (fixés avant les mesures)
 
-- Ablations et composants, sans spécialistes : règle du dépôt (`docs/JOURNAL_RECETTE.md`), référence = recette complète S.
+- Ablations et composants, sans spécialistes : règle du dépôt (`docs/journaux/JOURNAL_RECETTE.md`), référence = recette complète S.
   (a) moyenne des RMSE du mélange en baisse ≥ 0.0003 et aucune direction en hausse > 0.0002 ;
   (b) composant changé seul en baisse dans les deux directions et mélange ≤ +0.0001.
   Mélange des ablations : 0.5 × GBM + 0.5 × GRU, poids fixe. Outil : `outils/comparer_complete.py`.
@@ -43,7 +43,7 @@ Les temps de cette session sont tous mesurés sur cette machine ; ceux des journ
 | **Moyenne des 4** | | **0.076735** | identique au journal |
 
 - Référence sans spécialistes, mélange 0.5 × GBM R + 0.5 × GRU mixte sans lettres (sans GRU recette) : 0.077971 ;
-  installé sans spécialistes (avec GRU recette 0.3) : 0.07768 (`docs/JOURNAL_RECETTE.md`).
+  installé sans spécialistes (avec GRU recette 0.3) : 0.07768 (`docs/journaux/JOURNAL_RECETTE.md`).
 
 ## Écarts formule par formule entre la spec et le boosting R (avant ce programme)
 

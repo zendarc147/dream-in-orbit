@@ -10,9 +10,8 @@ Architecture :
   à part dont la sortie s'ajoute au seul NPWD2881 (le GRU ne les voit pas) ;
 - correction de niveau : l'écart entre power_init et la prédiction du simulateur sur ces
   7 jours, ajouté à la sortie avec un poids appris, s'estompe selon deux demi-vies apprises.
-Option non retenue (regime_partage, désactivée par défaut) : tête de régime commune à NPWD2551,
-NPWD2451 et NPWD2851, espérance d'un mélange de niveaux, cross-entropie auxiliaire sur des seuils
-appris à l'entraînement. Validée sans gain dans les deux directions.
+Dans le modèle final, ce world model sert au spécialiste de NPWD2532 (variables physiques, dio/ensemble.py)
+et aux ablations (outils/ablations.py).
 
 Entraînement : épisodes aléatoires de 7 jours de démarrage + N jours de simulation,
 perte MSE sur l'échelle brute (comme la métrique), heures inconnues masquées.
@@ -23,7 +22,6 @@ Chaque variable est bornée à sa plage d'entraînement : pas d'extrapolation ho
 Plusieurs graines forment un ensemble : moyenne = prédiction, écart-type = incertitude.
 """
 import json
-import math
 import multiprocessing
 import os
 import re
@@ -35,7 +33,6 @@ import numpy as np
 import pandas as pd
 import torch
 from torch import nn
-from torch.nn import functional
 
 from . import commandes
 from . import donnees
@@ -50,19 +47,10 @@ CONFIG_DEFAUT = {
     "bruit": 0.3,            # écart-type du bruit gaussien ajouté aux entrées normalisées (entraînement)
     "masque_saaf": 0.1,      # part des heures d'une copie de chaque période où SAAF est masqué par blocs (0 : pas de copie)
     "abandon_etats": 0.5,    # probabilité de mettre à 0 toutes les variables dmopcmd_etat_* d'un épisode (entraînement)
-    "regime_partage": False,  # tête de régime commune à CIBLES_REGIME : mélange de K niveaux par circuit
-    "regime_k": 2,           # nombre de régimes de la tête partagée
-    "lambda_regime": 0.05,   # poids de la cross-entropie de régime (entraînement, avec regime_partage)
-    "abandon_regime_contexte": 0.0,  # probabilité par épisode de masquer un bloc d'éclipses, modes FTL et DMOP
-    "curriculum_jours": None,  # ex. [180, 365, 540] : jours_sim par parts égales des pas (None : jours_sim)
     "physique": False,       # + flux solaire par face, ombre et moyennes passées 6/24/72 h (variables.physiques)
     "familles": True,        # + comptes horaires par famille de commande dmop, vocabulaire appris à l'entraînement
     "familles_variante": False,  # familles commandes.famille_variante (≥ 50 fois par période) au lieu de commandes.famille
     "retirer": [],           # expressions régulières des variables écartées (ex. comptes exacts avec lettre)
-    "poids_circuits": None,  # ex. {"NPWD2551": 4} : poids de ces circuits dans la MSE (moyenne des poids ramenée à 1)
-    "lissage_cible": None,   # ex. {"NPWD2551": 3} : moyenne centrée de la cible sur N heures, entraînement seul
-    "ajouts_2551": None,     # ex. ["echelles", "saison", "thermique", "etats", "commutateur"] (voir ajouts_2551)
-    "exclure": None,         # [début, fin) en fractions de chaque période, retiré avec 7 jours de marge (hors bloc)
     "taille": 128,
     "couches": 2,
     "dropout": 0.1,
@@ -81,26 +69,6 @@ CONFIG_DEFAUT = {
 }
 H_JOUR = 24
 APPAREIL = "cuda" if torch.cuda.is_available() else "cpu"
-CIBLES_REGIME = ["NPWD2551", "NPWD2451", "NPWD2851"]  # circuits de la tête de régime (regime_partage)
-
-
-def kmeans_log(valeurs, k):
-    """k-moyennes 1D déterministes sur log10 (valeurs ≥ 1e-4) : (centres, seuils) à l'échelle brute,
-    seuil = milieu de deux centres voisins sur l'échelle log."""
-    v = np.log10(np.maximum(valeurs[np.isfinite(valeurs)], 1e-4))
-    centres = np.quantile(v, (np.arange(k) + 0.5) / k)
-    for _ in range(100):
-        classe = np.argmin(np.abs(v[:, None] - centres), axis=1)
-        nouveaux = np.array([v[classe == i].mean() if (classe == i).any() else centres[i] for i in range(k)])
-        if np.allclose(nouveaux, centres):
-            break
-        centres = nouveaux
-    return 10 ** centres, 10 ** ((centres[1:] + centres[:-1]) / 2)
-
-
-def seuils_regime(y):
-    """Seuil bas/haut de chaque colonne de y (heures, circuits), appris sur ces seules heures."""
-    return np.array([kmeans_log(y[:, j], 2)[1][0] for j in range(y.shape[1])])
 
 
 def normaliser_entrees(f, stats):
@@ -127,8 +95,7 @@ def calculer_stats(f_tout, y_tout):
 
 
 class MondeGRU(nn.Module):
-    def __init__(self, n_entrees, n_circuits, taille, couches, dropout, y_stats, memoire=True, branche=None,
-                 regime=None):
+    def __init__(self, n_entrees, n_circuits, taille, couches, dropout, y_stats, memoire=True, branche=None):
         super().__init__()
         # y_stats = (moyenne, écart) des courants, pour comparer power_init (normalisé) à la
         # prédiction du modèle sur les mêmes heures (correction de niveau sur le résidu).
@@ -169,36 +136,6 @@ class MondeGRU(nn.Module):
             self.simulateur = nn.Sequential(nn.Linear(taille, taille), nn.GELU(), nn.Dropout(dropout),
                                             nn.Linear(taille, taille), nn.GELU())
         self.tete = nn.Linear(taille, n_circuits)
-        # Tête de régime partagée (regime["circuits"], regime["k"]) : une probabilité de régime commune
-        # et, pour chaque circuit visé, K niveaux conditionnels ; sortie = espérance du mélange.
-        # Créée après la tête : sans régime, l'initialisation des autres couches est inchangée.
-        self.regime = regime
-        if regime:
-            self.tete_regime = nn.Sequential(nn.Linear(taille, 32), nn.GELU(), nn.Linear(32, regime["k"]))
-            nn.init.zeros_(self.tete_regime[-1].weight)
-            nn.init.zeros_(self.tete_regime[-1].bias)
-            self.niveaux_regime = nn.Linear(taille, len(regime["circuits"]) * regime["k"])
-
-    @torch.no_grad()
-    def initialiser_regime(self, centres):
-        """Niveaux de départ = tête actuelle, décalée des centres de régime appris (recentrés) : avec
-        des probabilités uniformes, la sortie initiale est exactement celle de la tête actuelle."""
-        cibles, k = self.regime["circuits"], self.regime["k"]
-        centres = torch.as_tensor(centres, dtype=torch.float32, device=self.tete.bias.device)
-        self.niveaux_regime.weight.copy_(self.tete.weight[cibles].repeat_interleave(k, dim=0))
-        biais = self.tete.bias[cibles][:, None] + centres - centres.mean(dim=1, keepdim=True)
-        self.niveaux_regime.bias.copy_(biais.flatten())
-
-    def sortie_tete(self, etat):
-        """Courants (B, T, C) et logits de régime (B, T, K), None sans tête de régime."""
-        sortie = self.tete(etat)
-        if not self.regime:
-            return sortie, None
-        logits = self.tete_regime(etat)
-        niveaux = self.niveaux_regime(etat).unflatten(-1, (len(self.regime["circuits"]), self.regime["k"]))
-        melange = (logits.softmax(-1).unsqueeze(-2) * niveaux).sum(-1)
-        cibles = torch.as_tensor(self.regime["circuits"], device=sortie.device)
-        return sortie.index_copy(-1, cibles, melange), logits
 
     def etat_initial(self, x_init, y_init):
         """x_init (B, Ti, F), y_init (B, Ti, 2C) courants normalisés + masque -> h0 (couches, B, taille)."""
@@ -227,15 +164,13 @@ class MondeGRU(nn.Module):
         x = x_init[..., self.principales] if self.branche else x_init
         etat = self.simulateur(self.projection(x))[0]
         x_cmd = x_init[..., self.branche["entrees"]] if self.branche else None
-        prediction = self.ajouter_commandes(self.sortie_tete(etat)[0], x_cmd)
+        prediction = self.ajouter_commandes(self.tete(etat), x_cmd)
         n = y_init.shape[-1] // 2
         valeurs, masque = y_init[..., :n], y_init[..., n:]
         return (valeurs - (prediction - self.y_moyenne) / self.y_ecart) * masque
 
-    def simuler(self, x_sim, h, resume=None, debut=0, avec_logits=False):
-        """Avancer sur le contexte seul : retourne (courants (B, Ts, C), état final). Avec avec_logits,
-        ajoute les logits de régime calculés sur l'état détaché (perte auxiliaire : son gradient
-        n'atteint que la tête de régime, jamais le GRU ni les autres circuits)."""
+    def simuler(self, x_sim, h, resume=None, debut=0):
+        """Avancer sur le contexte seul : retourne (courants (B, Ts, C), état final)."""
         x_cmd = None
         if self.branche:
             x_cmd = x_sim[..., self.branche["entrees"]]
@@ -245,17 +180,16 @@ class MondeGRU(nn.Module):
             etat, h = self.simulateur(z, h)
         else:
             etat = self.simulateur(z)
-        sortie = self.ajouter_commandes(self.sortie_tete(etat)[0], x_cmd)
-        logits = self.tete_regime(etat.detach()) if avec_logits and self.regime else None
+        sortie = self.ajouter_commandes(self.tete(etat), x_cmd)
         if not self.memoire:
-            return (sortie, None, logits) if avec_logits else (sortie, None)
+            return sortie, None
         # debut : heure de simulation du premier pas de ce morceau (BPTT tronquée).
         t = debut + torch.arange(sortie.shape[1], device=sortie.device, dtype=sortie.dtype)
         attenuation = torch.exp2(-t[:, None] / self.log_demi_vie.exp())
         sortie = sortie + resume[:, None] * self.poids_niveau * attenuation
         lente = torch.exp2(-t[:, None] / self.log_demi_vie_lente.exp())
         sortie = sortie + resume[:, None] * self.poids_lent * lente
-        return (sortie, h, logits) if avec_logits else (sortie, h)
+        return sortie, h
 
     def ajouter_commandes(self, sortie, x_cmd):
         """Ajouter la sortie de la branche de commandes aux circuits qu'elle vise."""
@@ -299,50 +233,6 @@ def abandonner_etats(x, etats, probabilite):
     return x
 
 
-def abandonner_contexte(x, indices, probabilite, debut):
-    """Pour une partie des épisodes du lot x (B, T, F), mettre à 0 (espace normalisé) les variables
-    `indices` sur un bloc contigu après l'heure `debut` (24 h à toute la simulation, longueur
-    log-uniforme). Entraînement seulement ; power_init et les cibles ne passent pas ici."""
-    if not probabilite or not indices:
-        return x
-    x = x.clone()
-    n = x.shape[1] - debut
-    for b in torch.nonzero(torch.rand(x.shape[0]) < probabilite).flatten().tolist():
-        bas = math.log(min(24, n))
-        longueur = int(round(math.exp(torch.empty(1).uniform_(bas, math.log(n)).item())))
-        s = debut + int(torch.randint(0, n - longueur + 1, (1,)))
-        x[b, s:s + longueur, indices] = 0.0
-    return x
-
-
-def stats_regime(y, cibles, k):
-    """Régimes appris sur les seules heures d'entraînement y (heures, circuits) : seuils (n, K-1) et
-    centres (n, K) de k-moyennes 1D log par circuit visé, poids de classe (K) inverses des fréquences
-    de l'étiquette commune (médiane des régimes des circuits, majorité pour K = 2)."""
-    centres, seuils = zip(*(kmeans_log(y[:, j], k) for j in cibles))
-    seuils = np.array(seuils)
-    etiquettes = etiquettes_regime(torch.as_tensor(y[:, cibles]), torch.as_tensor(seuils))
-    connues = etiquettes[torch.isfinite(torch.as_tensor(y[:, cibles])).all(-1)].numpy()
-    frequences = np.maximum(np.bincount(connues, minlength=k) / max(len(connues), 1), 1e-3)
-    return {"regime_seuils": seuils, "regime_centres": np.array(centres),
-            "regime_poids": 1.0 / (k * frequences)}
-
-
-def etiquettes_regime(y, seuils):
-    """Étiquette de régime commune (forme de y sans le dernier axe) : médiane, sur les circuits, du
-    nombre de seuils dépassés."""
-    return (y.unsqueeze(-1) >= seuils.to(y.dtype)).sum(-1).median(dim=-1).values
-
-
-def perte_regime(logits, y, seuils, poids):
-    """Cross-entropie pondérée entre logits (B, T, K) et l'étiquette commune des cibles y (B, T, n) ;
-    heures où un circuit est inconnu exclues."""
-    connues = torch.isfinite(y).all(-1)
-    if not connues.any():
-        return logits.sum() * 0.0
-    return functional.cross_entropy(logits[connues], etiquettes_regime(y, seuils)[connues], weight=poids)
-
-
 def normaliser_courants(y, moyenne, ecart):
     """Courants normalisés (NaN -> 0) concaténés à leur masque de présence."""
     connus = np.isfinite(y)
@@ -350,64 +240,16 @@ def normaliser_courants(y, moyenne, ecart):
     return np.concatenate([yn, connus.astype(np.float64)], axis=-1)
 
 
-def exclure_bloc(bloc, debut, fin, marge=168):
-    """Morceaux d'une période (heures, x, y, dmop) hors de [debut, fin) (fractions) et de `marge`
-    heures de chaque côté. La table dmop reste entière : c'est du planning, pas une mesure."""
-    heures, x, y, dmop = bloc
-    n = len(heures)
-    a, b = int(round(debut * n)), int(round(fin * n))
-    return [(heures[s:e], x.iloc[s:e], y[s:e], dmop) for s, e in ((0, a - marge), (b + marge, n)) if e > s]
-
-
-def ajouts_2551(x, config, dmop, init=None):
-    """Variables du spécialiste boosting de NPWD2551 données au GRU (programme 5, docs/JOURNAL_2551.md) :
-    echelles, saison, thermique (x seul), etats et commutateur (vocabulaires appris à l'entraînement,
-    config["_etats_2551"] / config["_commutateur_2551"] ; init : régime du dernier jour de power_init, au test).
-    Valeurs inconnues : 0 (0.5 pour l'état du commutateur)."""
-    from baselines import gbm_sacs
-    heures, blocs = x.index.to_numpy(), []
-    for nom in config["ajouts_2551"]:
-        if nom == "echelles":
-            blocs.append(gbm_sacs.echelles(x))
-        elif nom == "saison":
-            blocs.append(gbm_sacs.saison(x))
-        elif nom == "thermique":
-            blocs.append(gbm_sacs.filtres_lents(x, gbm_sacs.CONSTANTES_THERMIQUES, "th_"))
-        elif nom == "etats":
-            blocs.append(gbm_sacs.variables_etats(dmop, heures, config["_etats_2551"]).set_axis(x.index))
-        elif nom == "commutateur":
-            blocs.append(gbm_sacs.variables_commutateur(dmop, heures, config["_commutateur_2551"], init).set_axis(x.index))
-        else:
-            raise ValueError(f"Ajout 2551 inconnu : {nom}")
-    table = pd.concat(blocs, axis=1)
-    if "comm_haut" in table:
-        table["comm_haut"] = table["comm_haut"].fillna(0.5)
-    return table.fillna(0.0)
-
-
-def construire_variables(x, config, dmop, voc_commandes, init=None):
+def construire_variables(x, config, dmop, voc_commandes):
     valeurs, noms = variables.construire(x, config["variables"], config["sans"], dmop, voc_commandes,
                                          config.get("physique", False), config.get("_familles"),
                                          config.get("familles_variante", False))
-    if config.get("ajouts_2551"):
-        table = ajouts_2551(x, config, dmop, init)
-        valeurs, noms = np.hstack([valeurs, table.to_numpy(dtype=np.float64)]), noms + list(table.columns)
     if config.get("retirer"):
         # Colonnes écartées par expression régulière (ex. comptes exacts avec lettre de variante).
         retirer = re.compile("|".join(config["retirer"]))
         garder = [not retirer.fullmatch(n) for n in noms]
         valeurs, noms = valeurs[:, garder], [n for n, g in zip(noms, garder) if g]
     return valeurs, noms
-
-
-def lisser(y, circuits, fenetres):
-    """Moyenne glissante centrée de certaines colonnes ; les heures sans vérité restent NaN."""
-    y = y.copy()
-    for c, w in fenetres.items():
-        j = circuits.index(c)
-        colonne = pd.Series(y[:, j])
-        y[:, j] = colonne.rolling(int(w), center=True, min_periods=1).mean().where(colonne.notna()).to_numpy()
-    return y
 
 
 def preparer_annees(annees, config):
@@ -424,10 +266,6 @@ def preparer_annees(annees, config):
             heures, x, y = np.concatenate([avant[0], heures]), pd.concat([avant[1], x]), np.concatenate([avant[2], y])
             dmop = pd.concat([avant[3], dmop], ignore_index=True)
         blocs.append((heures, x, y, dmop))
-    if config.get("exclure"):
-        # Validation interne : le bloc écarté ne sert ni aux statistiques, ni au vocabulaire des
-        # commandes, ni aux épisodes ; les morceaux restants deviennent des périodes séparées.
-        blocs = [morceau for bloc in blocs for morceau in exclure_bloc(bloc, *config["exclure"])]
     voc_commandes = None
     if config.get("commandes") is not None:
         voc_commandes = commandes.apprendre([(dmop, heures, y) for heures, _, y, dmop in blocs],
@@ -435,12 +273,6 @@ def preparer_annees(annees, config):
     if config.get("familles"):
         config["_familles"] = variables.apprendre_familles([dmop for *_, dmop in blocs],
                                                            config.get("familles_variante", False))
-    if config.get("ajouts_2551"):
-        from baselines import gbm_sacs
-        j = schema["target_columns"].index(gbm_sacs.CIRCUIT_COMMUTATEUR)
-        config["_etats_2551"] = gbm_sacs.apprendre_etats([dmop for *_, dmop in blocs])
-        config["_commutateur_2551"] = gbm_sacs.apprendre_commutateur(
-            [dmop for *_, dmop in blocs], [heures for heures, *_ in blocs], [y[:, j] for _, _, y, _ in blocs])
     periodes, copies = [], []
     for i, (_, x, y, dmop) in enumerate(blocs):
         f, noms = construire_variables(x, config, dmop, voc_commandes)
@@ -458,16 +290,11 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
     ti, ts = config["jours_init"] * H_JOUR, config["jours_sim"] * H_JOUR
     morceau = config["morceau_h"] or ts
     appareil = APPAREIL
-    regime = config.get("_regime")
     modele = MondeGRU(int(stats["garder"].sum()), n_circuits, config["taille"], config["couches"],
                       config["dropout"], (stats["y_moyenne"], stats["y_ecart"]), config["memoire"],
-                      config.get("_branche"), regime).to(appareil)
+                      config.get("_branche")).to(appareil)
     with torch.no_grad():
         modele.tete.bias.copy_(torch.as_tensor(stats["y_moyenne"], dtype=torch.float32))
-    if regime:
-        modele.initialiser_regime(stats["regime_centres"])
-        seuils = torch.as_tensor(stats["regime_seuils"], dtype=torch.float32, device=appareil)
-        poids_classes = torch.as_tensor(stats["regime_poids"], dtype=torch.float32, device=appareil)
     optim = torch.optim.AdamW(modele.parameters(), lr=config["lr"], weight_decay=config["weight_decay"])
     plan = torch.optim.lr_scheduler.OneCycleLR(optim, max_lr=config["lr"], total_steps=config["pas"],
                                                pct_start=0.1)
@@ -479,10 +306,6 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
     debut, cumul, pas = time.time(), 0.0, 0
     modele.train()
     while pas < config["pas"]:
-        if config.get("curriculum_jours"):
-            # Curriculum déterministe : parts égales des pas, l'épisode en cours finit sa longueur.
-            etapes = config["curriculum_jours"]
-            ts = etapes[min(len(etapes) * pas // config["pas"], len(etapes) - 1)] * H_JOUR
         # Épisode : longueur commune au lot, bornée par la plus courte période.
         sim = min(ts, min(len(f) for f, _ in periodes) - ti)
         tailles = np.array([len(f) - ti - sim + 1 for f, _ in periodes], dtype=float)
@@ -495,7 +318,6 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
             ys.append(y[s:s + ti + sim])
         x = torch.as_tensor(normaliser_entrees(np.stack(xs), stats), dtype=torch.float32, device=appareil)
         x = abandonner_etats(x, config.get("_etats", []), config.get("abandon_etats", 0.0))
-        x = abandonner_contexte(x, config.get("_contexte", []), config.get("abandon_regime_contexte", 0.0), ti)
         if config.get("bruit", 0.0):
             # Régularisation : le modèle ne doit pas dépendre d'une valeur d'entrée exacte.
             x = x + config["bruit"] * torch.randn_like(x)
@@ -503,8 +325,6 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
         y_init = torch.as_tensor(normaliser_courants(y[:, :ti], stats["y_moyenne"], stats["y_ecart"]),
                                  dtype=torch.float32, device=appareil)
         cible = torch.as_tensor(y[:, ti:], dtype=torch.float32, device=appareil)
-        poids_c = torch.as_tensor(config.get("_poids_circuits") or np.ones(n_circuits), dtype=torch.float32,
-                                  device=appareil).expand_as(cible)
         h = None
         for a in range(0, sim, morceau):
             if pas >= config["pas"]:
@@ -514,15 +334,12 @@ def entrainer_un(periodes, stats, config, graine, n_circuits):
                 resume = modele.resume_niveau(x[:, :ti], y_init)
             elif h is not None:
                 h = h.detach()
-            sortie, h, logits = modele.simuler(x[:, ti + a:ti + a + morceau], h, resume, a, avec_logits=True)
+            sortie, h = modele.simuler(x[:, ti + a:ti + a + morceau], h, resume, a)
             c = cible[:, a:a + morceau]
             masque = torch.isfinite(c)
             if not masque.any():
                 continue
-            perte = (((sortie - torch.nan_to_num(c)) ** 2) * poids_c[:, a:a + morceau])[masque].mean()
-            if regime and config["lambda_regime"]:
-                perte = perte + config["lambda_regime"] * perte_regime(
-                    logits, c[..., regime["circuits"]], seuils, poids_classes)
+            perte = ((sortie - torch.nan_to_num(c)) ** 2)[masque].mean()
             optim.zero_grad()
             perte.backward()
             nn.utils.clip_grad_norm_(modele.parameters(), 1.0)
@@ -560,27 +377,7 @@ def entrainer(annees, dossier, **options):
             "circuits": [schema["target_columns"].index(c) for c in config["branche_commandes"]],
         }
     config["_etats"] = [i for i, n in enumerate(gardees) if n.startswith("dmopcmd_etat_")]
-    if config.get("abandon_regime_contexte"):
-        # Contexte qui peut rendre le régime trop déterministe : éclipses, modes de pointage FTL, DMOP.
-        config["_contexte"] = [i for i, n in enumerate(gardees)
-                               if n.startswith(variables.GROUPES["eclipses"] + ("dmop_", "dmopcmd_etat_"))
-                               or (n.startswith("ftl_") and not n.startswith(("ftl_coverage", "ftl_comms",
-                                                                              "ftl_overlap")))]
-    if config.get("regime_partage"):
-        cibles = [schema["target_columns"].index(c) for c in CIBLES_REGIME]
-        config["_regime"] = {"circuits": cibles, "k": config["regime_k"]}
-        # Statistiques sérialisées, apprises sur les périodes d'entraînement originales seulement.
-        stats.update(stats_regime(y_tout, cibles, config["regime_k"]))
-    if config.get("poids_circuits"):
-        poids = np.ones(len(schema["target_columns"]))
-        for c, w in config["poids_circuits"].items():
-            poids[schema["target_columns"].index(c)] = w
-        config["_poids_circuits"] = (poids / poids.mean()).tolist()
     periodes = periodes + copies
-    if config.get("lissage_cible"):
-        # Débruite le cycle des thermostats : le simulateur apprend la consommation moyenne attendue.
-        # power_init de l'encodeur est lissé aussi (seule sa moyenne sur 7 jours compte vraiment).
-        periodes = [(f, lisser(y, schema["target_columns"], config["lissage_cible"])) for f, y in periodes]
     dossier = Path(dossier)
     dossier.mkdir(parents=True, exist_ok=True)
     n_circuits = len(schema["target_columns"])
@@ -612,7 +409,7 @@ def charger(dossier):
     for etat in paquet["etats"]:
         modele = MondeGRU(int(stats["garder"].sum()), len(paquet["circuits"]), config["taille"],
                           config["couches"], config["dropout"], (stats["y_moyenne"], stats["y_ecart"]),
-                          config["memoire"], config.get("_branche"), config.get("_regime"))
+                          config["memoire"], config.get("_branche"))
         modele.load_state_dict({k: v.float() for k, v in etat.items()})
         if config.get("borne_niveau_prediction") is not None:
             borne = float(config["borne_niveau_prediction"])
@@ -639,13 +436,7 @@ def simuler(dossier, x_df, y_init, n_init, dmop=None):
     """Retourner (moyenne, écart-type) de l'ensemble sur toute la grille (heures init comprises)."""
     paquet, config, stats, modeles = charger(dossier)
     torch.set_num_threads(config["threads"])
-    init = None
-    if config.get("ajouts_2551"):
-        from baselines import gbm_sacs
-        j = paquet["circuits"].index(gbm_sacs.CIRCUIT_COMMUTATEUR)
-        dernier = gbm_sacs.regime_journalier(x_df.index.to_numpy()[:n_init], y_init[:n_init, j])[-1]
-        init = None if np.isnan(dernier) else float(dernier)
-    f, noms = construire_variables(x_df, config, dmop, paquet.get("commandes"), init)
+    f, noms = construire_variables(x_df, config, dmop, paquet.get("commandes"))
     if noms != paquet["variables"]:
         raise ValueError("Variables différentes de celles de l'entraînement")
     x = torch.as_tensor(normaliser_entrees(f, stats)[None], dtype=torch.float32)

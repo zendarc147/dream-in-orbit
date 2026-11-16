@@ -1,5 +1,5 @@
 """World model GRU « recette » : plus petit, plus régularisé, avec réinjection de la sortie (point 9 de
-docs/JOURNAL_RECETTE.md ; étude, comparée au GRU mixte installé).
+docs/journaux/JOURNAL_RECETTE.md ; étude, comparée au GRU mixte installé).
 
 - Entrée de chaque heure : contexte (variables v2r + familles de commandes commandes.famille_variante,
   sans les comptes exacts avec lettre de variante) concaténé à la consommation de l'heure précédente,
@@ -35,7 +35,7 @@ CONFIG_DEFAUT = {
     "taille": 128, "dropout": 0.3, "dropout_variables": 0.2, "graines": [0, 1, 2, 3, 4], "epoques": 80,
     "flux": 16, "segment_h": 168, "epoques_verite": 15, "bruit_retour": 0.05, "lr": 1e-3, "weight_decay": 1e-3,
     "montee": 0.15, "reinjection": True,
-    # Recette complète (docs/JOURNAL_RECETTE_COMPLETE.md) : variables « S » de dio/caracteristiques.py (options
+    # Recette complète (docs/journaux/JOURNAL_RECETTE_COMPLETE.md) : variables « S » de dio/caracteristiques.py (options
     # d'ablation dans « recette ») ; B : premier segment de chaque flux avec la vérité réinjectée ; normalisation
     # « minmax » : bornes min/max d'entraînement puis clip ±5 (convention de monde.py, ablation).
     "recette": None, "premier_segment_verite": False, "normalisation": "standard",
@@ -234,10 +234,11 @@ def entrainer(annees, dossier, **options):
 
 
 @torch.no_grad()
-def predire(test_dir, out, dossier, recalage=0.0, demi_vie=1440):
+def predire(test_dir, out, dossier, recalage=0.0, demi_vie=1440, membres=False):
     """recalage : comme le boosting (baselines.boosting.recaler), décalage de chaque circuit d'une fraction
     de l'écart moyen entre power_init et la simulation libre du modèle sur ces mêmes heures, atténué avec
-    une demi-vie en heures. 0 : recette telle quelle."""
+    une demi-vie en heures. 0 : recette telle quelle. membres : rendre aussi les prédictions de chaque graine
+    (graines, heures à prédire, circuits), pour l'incertitude de l'ensemble."""
     paquet = torch.load(Path(dossier) / "recette.pt", weights_only=True)
     config, stats = paquet["config"], {k: v.numpy() for k, v in paquet["stats"].items()}
     test = donnees.lire_dossier_test(test_dir)
@@ -270,4 +271,8 @@ def predire(test_dir, out, dossier, recalage=0.0, demi_vie=1440):
         sorties.append(sortie)
     debut = np.where(np.isfinite(test["y_init"][:n_init]), test["y_init"][:n_init], stats["y_moyenne"])
     moyenne = np.clip(np.concatenate([debut, np.mean(sorties, axis=0)]), 0, None)
-    return donnees.ecrire_predictions(test["heures"], moyenne, test["heures_a_predire"], paquet["circuits"], out)
+    table = donnees.ecrire_predictions(test["heures"], moyenne, test["heures_a_predire"], paquet["circuits"], out)
+    if not membres:
+        return table
+    lignes = pd.Index(test["heures"]).get_indexer(table.index)
+    return table, np.stack([np.concatenate([debut, s])[lignes] for s in sorties])

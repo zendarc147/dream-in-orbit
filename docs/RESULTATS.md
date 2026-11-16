@@ -704,7 +704,7 @@ Coût de la session : environ 2 h de GPU T4 (référence, 6 essais, modèle fina
 
 ## Ensemble GRU + boosting enrichi — 11 novembre 2026
 
-Journal complet (hypothèses, commandes, tableaux, décisions) : `docs/JOURNAL_ENSEMBLE.md`.
+Journal complet (hypothèses, commandes, tableaux, décisions) : `docs/journaux/JOURNAL_ENSEMBLE.md`.
 Calculs en local (CPU), prédictions de référence du GRU recalculées en local (la directe est
 identique à Kaggle ; en inverse, `power_init` local suit la procédure officielle minute par minute).
 
@@ -722,7 +722,7 @@ identique à Kaggle ; en inverse, `power_init` local suit la procédure officiel
 
 ## Spécialistes NPWD2551 / NPWD2451 — 11 novembre 2026
 
-Détail : `docs/JOURNAL_SPECIALISTES.md`. Avec ces deux circuits parfaits, le RMSE de validation
+Détail : `docs/journaux/JOURNAL_SPECIALISTES.md`. Avec ces deux circuits parfaits, le RMSE de validation
 passerait de 0.0795 à 0.0560 (−30 %, pas −50 %). Ce sont des thermostats tout-ou-rien avec des
 cycles de 5 à 20 min : leur moyenne horaire dépend d'une phase que rien dans les entrées ne donne.
 Leviers testés : boosting spécialiste (orbite, réglage A, cible lissée), GRU pondéré ×4 avec ou sans
@@ -731,7 +731,7 @@ l'autre. Le seul mélange accepté gagne −0.00012 au total : non installé, `p
 
 ## Spécialistes NPWD2531 / NPWD2532 — 11 novembre 2026
 
-Détail : `docs/JOURNAL_SPECIALISTES.md`. NPWD2531 : porte de régime par marqueurs du planning
+Détail : `docs/journaux/JOURNAL_SPECIALISTES.md`. NPWD2531 : porte de régime par marqueurs du planning
 (`baselines/marqueurs.py`) : près d'une famille marqueur on garde l'ensemble, ailleurs la médiane
 recalée sur power_init. NPWD2532 : 0.6 × boosting + 0.4 × GRU physique (H1a). Validation, moyenne
 des 4 RMSE : 0.079555 → 0.077972 (directe 0.0767 / 0.0765, inverse 0.0791 / 0.0795) ; les 31 autres
@@ -739,7 +739,7 @@ colonnes sont inchangées au bit près. Installé dans `poids/specialiste/`.
 
 ## NPWD2551, programme 2 — 13 novembre 2026
 
-Détail : `docs/JOURNAL_2551.md`. La sous-estimation prolongée de 2551 (21 à 36 % de sa MSE sur les validations
+Détail : `docs/journaux/JOURNAL_2551.md`. La sous-estimation prolongée de 2551 (21 à 36 % de sa MSE sur les validations
 internes) se concentre aux bascules du réchauffeur, décalées de la saison d'éclipses (corrélation ; cause
 requalifiée au programme 3). Testés sur trois validations
 (directe, inverse, chronologique) : ensemble de 20 XGBoost diversifiés, fenêtres passées et futures de 24 à 720 h
@@ -750,7 +750,7 @@ installé, le modèle livré reste (0.076735).
 
 ## NPWD2551, programme 3 — 14 novembre 2026
 
-Détail : `docs/JOURNAL_2551.md`. Réglages choisis par validation croisée interne à l'année d'entraînement, poids
+Détail : `docs/journaux/JOURNAL_2551.md`. Réglages choisis par validation croisée interne à l'année d'entraînement, poids
 de mélange choisis sur des périodes disjointes (la chrono est incluse dans la directe), règle d'installation plus
 stricte. Diagnostic : 61 à 76 % de la MSE du livré est horaire (cycle du thermostat, peu lié à l'orbite) ; près
 des bascules, le contexte ne place pas la date. Candidats : XGBoost réglé, modèle à deux régimes avec persistance,
@@ -765,7 +765,7 @@ bas » a été testée à la demande (règle fixée avant la mesure). Le commuta
 
 ## NPWD2551, programme 4 — recette B reproduite — 14 novembre 2026
 
-Détail : `docs/JOURNAL_2551.md`. Recette indépendante (`controles/recette_b/`) : entrées horaires reproduites au bit
+Détail : `docs/journaux/JOURNAL_2551.md`. Recette indépendante (`controles/recette_b/`) : entrées horaires reproduites au bit
 près (empreinte de contrôle identique, environnement épinglé Python 3.11 / scikit-learn 1.6.1 et environnement du
 projet), HGB à 5 sacs entraîné sur Kaggle T4. Seul, le boosting B fait 0.2786 / 0.2270 / 0.2828 (directe / inverse /
 chrono) contre 0.2678 / 0.2229 / 0.2641 pour le spécialiste livré ; en remplacement de la part boosting de 2551 dans
@@ -776,7 +776,7 @@ effet (masques identiques) ; en inverse, interaction entrées × réglages. Rien
 
 ## NPWD2551, programme 5 — erreur infra-horaire — 15 novembre 2026
 
-Détail : `docs/JOURNAL_2551.md`. Le courant brut de 2551 est une somme de trois lignes de chauffage tout-ou-rien
+Détail : `docs/journaux/JOURNAL_2551.md`. Le courant brut de 2551 est une somme de trois lignes de chauffage tout-ou-rien
 (0.205, 0.63, 1.045). 17 candidats testés sur Kaggle : variables ajoutées au boosting (état thermique, EMA lentes,
 orbite exacte, EVTF, blocs de la recette B, saison), un boosting par ligne de chauffage, boosting sur grille de
 10 min, thermostat différentiable, GRU avec entrées 2551, LightGBM, CatBoost. Meilleur : boosting avec état
@@ -786,7 +786,7 @@ installé, le modèle livré reste (0.076735). Candidats gardés : `poids_candid
 
 ## Structure sobre de l'ensemble — 16 novembre 2026
 
-Détail : `docs/JOURNAL_STRUCTURE.md`. Orientation imposée par l'utilisateur (sobriété avant le dernier millième),
+Détail : `docs/journaux/JOURNAL_STRUCTURE.md`. Orientation imposée par l'utilisateur (sobriété avant le dernier millième),
 liste fermée de structures et règle écrites avant mesure : garde-fous sur les 4 RMSE temporelles (directe, inverse,
 graines 0–4 et 5–9) et sur une validation à origine glissante à quatre coupures (c50, c62, c75, c87 ; réentraînement
 complet sur Kaggle T4 à chaque coupure), puis choix du premier admissible par ordre de sobriété. Écarts au livré
@@ -809,11 +809,11 @@ Structure choisie pour sa sobriété sur décision de l'utilisateur ; elle ne ma
 Part du réseau : 0.5 du mélange. Poids de tous les candidats : `poids_candidats/structure/INDEX.md`.
 
 Installation de T3 (même jour, décision de l'utilisateur, refusé par la règle) : moyenne des 4 RMSE 0.077525,
-moyenne des coupures 0.074158 (`docs/JOURNAL_STRUCTURE.md`, « Installation de T3 »).
+moyenne des coupures 0.074158 (`docs/journaux/JOURNAL_STRUCTURE.md`, « Installation de T3 »).
 
 ## Second GRU à boucle dans la part réseau — 16 novembre 2026
 
-Détail : `docs/JOURNAL_GRU_BOUCLE.md`. Orientation imposée par l'utilisateur : la part réseau contient deux GRU de
+Détail : `docs/journaux/JOURNAL_GRU_BOUCLE.md`. Orientation imposée par l'utilisateur : la part réseau contient deux GRU de
 natures différentes, le GRU S borné de T3 (G0) et un GRU qui relit sa propre prédiction (GB : réinjection,
 scheduled sampling jusqu'à p = 0, premier segment avec la vérité, normalisation standard, aucun recalage). Liste
 fermée et règle écrites avant mesure ; S2 installé sauf échec technique. Entraînements sur Kaggle T4 (`zendarc147`),

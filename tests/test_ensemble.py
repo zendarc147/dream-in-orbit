@@ -59,28 +59,18 @@ class EnsembleTest(unittest.TestCase):
         np.testing.assert_allclose(seul, (1 - w) * gru + w * gbm, atol=1e-9)
         self.assertGreater(np.abs(gru - gbm).to_numpy().max(), 1e-3)
 
-    @unittest.skipUnless(json.loads((POIDS / "ensemble.json").read_text()).get("part_recette") if EST_ENSEMBLE else False,
-                         "pas de GRU recette")
-    @unittest.skipUnless((POIDS / "membres.json").is_file(), "pas de GRU mixte (structure T3 : GRU recette seul)")
-    def test_part_gru_melange_mixte_et_recette(self):
-        a = json.loads((POIDS / "ensemble.json").read_text())["part_recette"]
-        gru = predire(TEST, self.temp.name, poids_gbm=0).set_index("ut_ms")
-        mixte = predire(TEST, self.temp.name, poids_gbm=0, part_recette=0).set_index("ut_ms")
-        recette = predire(TEST, self.temp.name, poids_gbm=0, part_recette=1).set_index("ut_ms")
-        np.testing.assert_allclose(gru, (1 - a) * mixte + a * recette, atol=1e-9)
-        self.assertGreater(np.abs(mixte - recette).to_numpy().max(), 1e-3)
-
-    @unittest.skipUnless(json.loads((POIDS / "ensemble.json").read_text()).get("recette2") if EST_ENSEMBLE else False,
-                         "pas de second GRU recette")
-    def test_part_gru_deux_gru_recette(self):
+    def test_part_reseau_deux_gru_et_incertitude(self):
         w = json.loads((POIDS / "ensemble.json").read_text())["recette2"]
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "p.csv"
-            ensemble.predire(TEST, out, POIDS, parts=True)
+            ensemble.predire(TEST, out, POIDS, parts=True, sortie_incertitude=Path(temp) / "ecart.csv")
             p = {k: pd.read_csv(Path(str(out) + ".parts") / f"{k}.csv", index_col=0)
-                 for k in ("gru", "gru_recette", "gru_recette2")}
-        np.testing.assert_allclose(p["gru"], (1 - w) * p["gru_recette"] + w * p["gru_recette2"], atol=1e-9)
-        self.assertGreater(np.abs(p["gru_recette"] - p["gru_recette2"]).to_numpy().max(), 1e-3)
+                 for k in ("gru", "gru_s", "gru_boucle")}
+            ecart = pd.read_csv(Path(temp) / "ecart.csv", index_col=0)
+        np.testing.assert_allclose(p["gru"], (1 - w) * p["gru_s"] + w * p["gru_boucle"], atol=1e-9)
+        self.assertGreater(np.abs(p["gru_s"] - p["gru_boucle"]).to_numpy().max(), 1e-3)
+        self.assertTrue(ecart.index.equals(p["gru"].index) and (ecart.to_numpy() >= 0).all())
+        self.assertGreater(ecart.to_numpy().max(), 1e-3)
 
     @unittest.skipUnless((POIDS / "specialiste" / "specialistes.json").is_file(), "pas de spécialistes")
     def test_specialistes_ne_changent_que_leurs_colonnes(self):

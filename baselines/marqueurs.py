@@ -15,21 +15,51 @@ l'ensemble, qui suit l'heure des impulsions. Ailleurs, on prend la médiane, rec
 power_init avec une demi-vie de 1440 h (même recalage que le boosting).
 """
 import json
+import re
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
-from baselines import gbm_sacs
 from baselines.boosting import recaler
-from dio import donnees
+from dio import commandes, donnees, variables
 
 MIN_HEURES = 200
 MAX_MARQUEURS = 3
 GAIN_MIN = 0.01
+DEMI_FENETRES = (24, 168)
+
+
+def famille_etendue(code):
+    """Famille d'une commande : lettres de variante fusionnées ; MOCS.0000003738 -> MOCS."""
+    m = re.match(r"^([A-Z]{4})\.\d+$", code)
+    return m.group(1) if m else commandes.famille(code)
+
+
+def apprendre_planning(tables):
+    """Familles vues au moins MIN_FAMILLE fois sur l'entraînement et paires début/fin (XXXS / XXXE)."""
+    comptes = pd.concat(tables).subsystem.map(famille_etendue).value_counts()
+    familles = sorted(comptes[comptes >= variables.MIN_FAMILLE].index)
+    paires = [(f, f[:3] + "E") for f in familles if re.fullmatch(r"[A-Z]{3}S", f) and f[:3] + "E" in familles]
+    return {"familles": familles, "paires": paires}
+
+
+def variables_regimes(dmop, heures, planning):
+    """Comptes de chaque famille du planning dans [t - w, t + w] (heures entières)."""
+    heures = np.asarray(heures, dtype=np.int64)
+    table = dmop.assign(subsystem=dmop.subsystem.map(famille_etendue))
+    comptes = commandes.impulsions(table, heures, planning["familles"])
+    cumul = np.vstack([np.zeros((1, comptes.shape[1])), np.cumsum(comptes, axis=0)])
+    t, n = np.arange(len(heures)), len(heures)
+    sortie = {}
+    for w in DEMI_FENETRES:
+        fenetre = cumul[np.minimum(t + w + 1, n)] - cumul[np.maximum(t - w, 0)]
+        sortie.update({f"plan_{f}_pm{w}h": fenetre[:, j] for j, f in enumerate(planning["familles"])})
+    return pd.DataFrame(sortie, index=heures)
 
 
 def presences(dmop, heures, planning, demi_fenetre):
-    table = gbm_sacs.variables_regimes(dmop, heures, planning)
+    table = variables_regimes(dmop, heures, planning)
     return {f: table[f"plan_{f}_pm{demi_fenetre}h"].to_numpy() > 0 for f in planning["familles"]}
 
 
@@ -66,7 +96,7 @@ def apprendre_liste(y, presence):
 def entrainer(annees, dossier, circuits=("NPWD2531",)):
     schema = donnees.charger_schema()
     tables = [donnees.lire_dmop(a) for a in annees]
-    planning = gbm_sacs.apprendre_planning(tables)
+    planning = apprendre_planning(tables)
     ys, presence = [], {}
     for annee, dmop in zip(annees, tables):
         heures, _, y = donnees.charger_annee(annee, schema)

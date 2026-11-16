@@ -17,7 +17,7 @@ choix laissé ouvert est pris ici et noté « choix d'exécution ».
 ## Point de départ (vérifié, pas redécouvert)
 
 - `poids/` = structure T3 à 10 graines, installée à la demande de l'utilisateur alors que la règle de
-  `docs/JOURNAL_STRUCTURE.md` l'avait refusée. Part réseau : GRU S borné (G0 : `variables="S"`, `reinjection=false`,
+  `docs/journaux/JOURNAL_STRUCTURE.md` l'avait refusée. Part réseau : GRU S borné (G0 : `variables="S"`, `reinjection=false`,
   `normalisation="minmax"`, recalage 1.0 à la prédiction, graines 0–9 fusionnées, `recette/`). Part boosting :
   boosting S (`gbm/`, recalé) ; NPWD2551 : recette B seule (`specialiste/b_NPWD2551/`). Mélange 0.5 / 0.5, puis
   spécialistes NPWD2532 et NPWD2531 du livré. Repli : `poids_repli/` (livré L), `poids_candidats/structure/`.
@@ -121,15 +121,15 @@ changé.
 
 Précision (choix d'exécution, écrit avant mesure) : S0 et S2 sont à 10 graines, donc un seul run par direction ; la
 « moyenne des 4 RMSE temporelles » est ici la moyenne directe / inverse, comme pour T3_g10 (0.077525) dans
-`docs/JOURNAL_STRUCTURE.md`. Les quarts d'horizon sont ceux de `outils/structure.py` (4 tranches égales des heures
+`docs/journaux/JOURNAL_STRUCTURE.md`. Les quarts d'horizon sont ceux de `outils/structure.py` (4 tranches égales des heures
 prédites, RMSE sur les 33 colonnes), sur le modèle complet, pour les 6 validations.
 
-**Bruit de référence** (repris de `docs/JOURNAL_STRUCTURE.md`, |g04 − g59| du livré complet, au moins l'effet
+**Bruit de référence** (repris de `docs/journaux/JOURNAL_STRUCTURE.md`, |g04 − g59| du livré complet, au moins l'effet
 d'environnement du programme 4, ≈ 0.0001 sur la RMSE globale) : directe 0.0001, inverse 0.00013, c50 0.0001, c62
 0.0001, c75 0.00014, c87 0.0004. Tout écart plus petit est « égal ».
 
 Validations : directe, inverse, coupures glissantes c50, c62, c75, c87 (`validation_glissant/`, définition de
-`docs/JOURNAL_STRUCTURE.md`) ; c50 réutilise les modèles de la directe. Vocabulaires et statistiques de normalisation
+`docs/journaux/JOURNAL_STRUCTURE.md`) ; c50 réutilise les modèles de la directe. Vocabulaires et statistiques de normalisation
 réappris dans chaque entraînement. Seuls les 7 jours réels initiaux de chaque test sont lus (réchauffement de GB,
 recalage de G0 et du boosting comme dans T3).
 
@@ -144,7 +144,7 @@ recalage de G0 et du boosting comme dans T3).
 
 `predict.py` → `evaluate.py` sur les six dossiers `runs/st_T3_<v>_g10`, avec le `dio/ensemble.py` modifié (clé
 `recette2` absente) : directe 0.074604, inverse 0.080447, c50 0.064210, c62 0.063848, c75 0.092209, c87 0.076363,
-soit exactement les scores de T3 de `docs/JOURNAL_STRUCTURE.md`. Les six `pred_repro.csv` et leurs parts (réseau,
+soit exactement les scores de T3 de `docs/journaux/JOURNAL_STRUCTURE.md`. Les six `pred_repro.csv` et leurs parts (réseau,
 boosting) sont identiques au bit près aux `pred.csv` d'origine : le code ajouté ne change rien sans `recette2`.
 
 ## Étape 2 — contrôle de GB sur c62 (session K0, Kaggle `zendarc147-1`, T4)
@@ -321,7 +321,7 @@ c62 336 h, c75 82 h, c87 1 310 h. Corrélation des erreurs GB / GB-mm (même bou
 
 - Entraînement sur T4 (5 graines par entraînement, deux par GRU à 10 graines) : GB 368–377 s (directe, inverse),
   417–419 s (c62), 523–531 s (c75), 573–579 s (c87) ; GB-mm 370–582 s, mêmes ordres. Pour mémoire, G0 (GRU S borné) :
-  389–538 s sur les coupures (`docs/JOURNAL_STRUCTURE.md`). La boucle ne coûte presque rien à l'entraînement.
+  389–538 s sur les coupures (`docs/journaux/JOURNAL_STRUCTURE.md`). La boucle ne coûte presque rien à l'entraînement.
 - Prédiction d'un GRU à 10 graines seul (local, 4 en parallèle) : 7 à 13 s sur une coupure, 39 à 50 s sur une année ;
   GB et G0 au même niveau. Prédiction de bout en bout (local, 3 en parallèle, temps très bruités par la concurrence) :
   S2 96 à 625 s, S0 32 à 740 s.
@@ -361,7 +361,7 @@ moyenne temporelle 0.077845 (+0.000320), coupures 0.073759.
   hors saison (biais NPWD2551 c87 +0.099 contre +0.208 pour G0).
 - **Revers du même effet** : GB descend plus bas que G0 en régime haut hors saison. Biais de NPWD2551 en régime haut
   hors saison, moyenne des coupures : S0 −0.0888, S2 −0.0990, S1 −0.1093 (directe : −0.0887, −0.1003, −0.1120). La
-  sous-estimation redoutée par `docs/JOURNAL_STRUCTURE.md` augmente donc d'environ 0.01 avec S2. En inverse, S2 la
+  sous-estimation redoutée par `docs/journaux/JOURNAL_STRUCTURE.md` augmente donc d'environ 0.01 avec S2. En inverse, S2 la
   réduit (−0.3081 → −0.2869).
 - **Dérive** : GB seul dépasse 1.5 × q1 au dernier quart de c87 (0.1138 / 0.0749 = 1.52) alors que G0 reste à 1.20 ;
   dans le modèle complet, S2 reste à 1.20 (S0 1.13). La règle porte sur le modèle complet ; la boucle seule dérive
@@ -371,7 +371,7 @@ moyenne temporelle 0.077845 (+0.000320), coupures 0.073759.
 
 - **Réinjection** (GB-mm contre G0 sans recalage, même normalisation minmax, seul change la boucle) : pire sur directe
   (+0.0010), inverse (+0.0053), c50 (+0.0023), c75 (+0.0024) ; meilleure sur c62 (−0.0016) et c87 (−0.0044).
-  Conforme au jugement de `docs/JOURNAL_RECETTE_COMPLETE.md` sur directe / inverse ; faux sur les deux coupures où le
+  Conforme au jugement de `docs/journaux/JOURNAL_RECETTE_COMPLETE.md` sur directe / inverse ; faux sur les deux coupures où le
   régime change (c62, c87).
 - **Normalisation** (GB standard contre GB-mm) : égale sur directe, c50, c62 (|Δ| ≤ 0.00014), meilleure en inverse
   (−0.0048), pire sur c75 (+0.0003) et c87 (+0.0006). Contrairement à G0, le bornage min/max n'aide pas la boucle en
@@ -423,7 +423,7 @@ uv run python outils/gru_boucle.py finaux
 
 `runs/gb_lancer.sh` (non suivi, comme `runs/`) : `mapfile -d '' ARGS < <(uv run python outils/gru_boucle.py kaggle
 "$1"); exec uv run python outils/lancer_kaggle.py --fente "$2" "${@:3}" -- "${ARGS[@]}"`. Les dossiers T3 à 10 graines
-de chaque validation (`runs/st_T3_<v>_g10`) viennent de `outils/structure.py assembler` (`docs/JOURNAL_STRUCTURE.md`).
+de chaque validation (`runs/st_T3_<v>_g10`) viennent de `outils/structure.py assembler` (`docs/journaux/JOURNAL_STRUCTURE.md`).
 
 ## Limites
 
@@ -435,7 +435,7 @@ de chaque validation (`runs/st_T3_<v>_g10`) viennent de `outils/structure.py ass
 - La diversité apportée est modeste : erreurs G0 / GB corrélées à 0.90–0.98 ; seules c87 et l'inverse descendent
   sous 0.95.
 - S2 augmente un peu la sous-estimation de NPWD2551 en régime haut hors saison sur les coupures (−0.089 → −0.099), le
-  risque que `docs/JOURNAL_STRUCTURE.md` voulait réduire ; il la réduit en inverse.
+  risque que `docs/journaux/JOURNAL_STRUCTURE.md` voulait réduire ; il la réduit en inverse.
 - c50 réutilise les modèles de la directe (non indépendantes) ; quatre coupures sur deux années ; c87 contient le seul
   régime haut hors saison de février–mars 2012. Les poids finaux n'ont pas de score propre.
 - Une seule série d'entraînements par GRU (10 graines, deux groupes fusionnés) : le bruit entre deux séries de GB n'est

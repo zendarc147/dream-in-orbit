@@ -27,7 +27,7 @@ DIRECTIONS = {
 # Validation chronologique (outils/faire_chrono.py) : annee1 + première moitié d'annee2 -> seconde moitié.
 # Jamais incluse par défaut ; --direction chrono.
 TOUTES = {**DIRECTIONS, "chrono": (["annee1", "validation_chrono/entrainement"], RACINE / "validation_chrono")}
-# Origine glissante (outils/faire_chrono.py --glissant, docs/JOURNAL_STRUCTURE.md) : --direction c50 c62 c75 c87.
+# Origine glissante (outils/faire_chrono.py --glissant, docs/journaux/JOURNAL_STRUCTURE.md) : --direction c50 c62 c75 c87.
 TOUTES.update({c: (["annee1"] + ([f"validation_glissant/{c}/entrainement"] if c != "c50" else []),
                    RACINE / "validation_glissant" / c) for c in ("c50", "c62", "c75", "c87")})
 

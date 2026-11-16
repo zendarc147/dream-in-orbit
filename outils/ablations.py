@@ -1,10 +1,10 @@
 """Ablations du world model : que valent les éclipses, le Soleil, les commandes, la mémoire ?
 
-    python outils/ablations.py                         # direction directe, configuration de poids/modele.json
+    python outils/ablations.py                         # direction directe, configuration par défaut de dio/monde.py
     python outils/ablations.py --direction directe inverse --graines 0 1
 
-Chaque variante est entraînée puis notée via train.py -> predict.py -> evaluate.py
-(voir valider.py). Le tableau est écrit dans docs/ABLATIONS.md.
+Ablations du world model GRU à encodeur (dio/monde.py, modèle « gru »). Chaque variante est entraînée puis
+notée via train.py -> predict.py -> evaluate.py (voir valider.py). Le tableau est écrit dans docs/ABLATIONS.md.
 """
 import argparse
 import json
@@ -27,12 +27,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--direction", nargs="+", default=["directe"], choices=["directe", "inverse"])
     ap.add_argument("--graines", nargs="+", type=int, default=None)
-    ap.add_argument("--options", default="{}", help="options JSON communes (surchargent poids/modele.json)")
+    ap.add_argument("--options", default="{}", help="options JSON communes du world model (dio/monde.py)")
     args = ap.parse_args()
-    base = json.loads((RACINE / "poids/modele.json").read_text()).get("options", {})
-    # Options du world model seulement (le modèle installé peut être l'ensemble gru_gbm).
-    base = {k: v for k, v in base.items() if k not in ("gru_depuis", "poids_gbm", "gbm")}
-    base = {**base, **json.loads(args.options)}
+    base = json.loads(args.options)
     if args.graines is not None:
         base["graines"] = args.graines
     lignes = []

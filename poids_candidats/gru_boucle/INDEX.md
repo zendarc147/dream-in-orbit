@@ -1,4 +1,4 @@
-# Poids finaux (annee1 + annee2) du programme « GRU à boucle » (`docs/JOURNAL_GRU_BOUCLE.md`)
+# Poids finaux (annee1 + annee2) du programme « GRU à boucle » (`docs/journaux/JOURNAL_GRU_BOUCLE.md`)
 
 Base de chaque dossier : copie indépendante (aucun lien dur) de `poids_candidats/structure/T3_g10/` (part boosting S,
 recette B pour NPWD2551, spécialistes NPWD2532 et NPWD2531, G0 dans `recette/`), plus `recette2/recette.pt` = GB

@@ -22,13 +22,13 @@ existants, scores, tests.
   spécialistes NPWD2531 (porte des marqueurs), NPWD2532 (0.6 boosting + 0.4 world model physique) et boosting propre de
   NPWD2551 (D3L + orbite).
 - Directe, inverse et chronologique ont servi à plusieurs centaines de décisions ; un écart de 0.001 est de l'ordre de
-  l'effet d'environnement mesuré au programme 4 (`docs/JOURNAL_2551.md`).
+  l'effet d'environnement mesuré au programme 4 (`docs/journaux/JOURNAL_2551.md`).
 - « La validation interne ne prédit pas le transfert entre années » pour NPWD2551 (programme 3, limite 3).
 - 61 à 76 % de la MSE de NPWD2551 est le cycle du thermostat ; reste attaquable l'erreur de niveau prolongée
   (épisodes de plusieurs semaines à −0.3 / −0.4 aux bascules du réchauffeur, régime haut hors saison).
 - GRU S borné (`variables="S"`, une couche de 128, `normalisation="minmax"`) : meilleur GRU seul en directe ; C1
   (0.5 mixte + 0.5 GRU S borné) gagne sur les 4 RMSE (0.076288) et n'a été écarté que par la porte chronologique à une
-  seule coupure (`docs/JOURNAL_RECETTE_COMPLETE.md`).
+  seule coupure (`docs/journaux/JOURNAL_RECETTE_COMPLETE.md`).
 - Boosting sobre (S ; recette B pour NPWD2551) : un peu moins bon en interne, niveau de NPWD2551 plus haut hors saison.
 
 ## Orientation imposée (décision de l'utilisateur, pas un résultat mesuré)

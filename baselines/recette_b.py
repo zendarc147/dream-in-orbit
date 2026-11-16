@@ -1,13 +1,12 @@
-"""Recette B : boosting horaire indépendant pour NPWD2551 (controles/recette_b/RECETTE_AUTONOME.md).
+"""Recette B : boosting horaire indépendant pour NPWD2551 (tests/controles/recette_b/RECETTE_AUTONOME.md).
 
-Module indépendant du livré : numpy, pandas et scikit-learn seulement, aucune fonction de dio/ ni de
-baselines/gbm_sacs.py (il doit tourner dans l'environnement de référence épinglé, sans torch). Il ne change
-aucun défaut du livré. Les numéros de section renvoient à la recette.
+Module indépendant : numpy, pandas et scikit-learn seulement, aucune fonction de dio/ ni de
+baselines/gbm_sacs.py. Les numéros de section renvoient à la recette.
 
-Interprétations notées (docs/JOURNAL_2551.md, programme 4) : tris par ut_ms stables (kind="stable"), sauf
+Interprétations notées (docs/journaux/JOURNAL_2551.md, programme 4) : tris par ut_ms stables (kind="stable"), sauf
 l'altitude (np.argsort par défaut, comme demandé) ; changements de variante datés à leur heure même hors grille ;
 récences en float32 avant log1p (§8), distances aux changements en float64. Avec ces choix, X année 1 sur le
-vocabulaire de contrôle redonne exactement l'empreinte sha256 de controles/recette_b/controle_reference.json.
+vocabulaire de contrôle redonne exactement l'empreinte sha256 de tests/controles/recette_b/controle_reference.json.
 """
 import re
 from pathlib import Path
@@ -26,18 +25,12 @@ DECALES = ("ev_umbra", "ev_penumbra", "saaf_cos_sa", "saaf_cos_sx", "saaf_cos_sy
 EXCLUES = r"lt_earthmars|lt_sunmarsearth|^roll_|^ewm_|^dm_s_|^dm_c_|^dm_r_"
 SEUIL = 50
 
-# §11 : paramètres exacts (controles/recette_b/parametres_reference.json).
+# §11 : paramètres exacts (tests/controles/recette_b/parametres_reference.json).
 PARAMS_B = {"loss": "squared_error", "learning_rate": 0.02, "max_iter": 600, "max_leaf_nodes": 15, "max_depth": None,
             "min_samples_leaf": 100, "l2_regularization": 3.0, "max_bins": 255, "categorical_features": "from_dtype",
             "max_features": 1.0, "quantile": None, "verbose": 0, "monotonic_cst": None, "interaction_cst": None,
             "warm_start": False, "early_stopping": "auto", "scoring": "loss", "validation_fraction": 0.1,
             "n_iter_no_change": 10, "tol": 1e-7, "random_state": 0}
-# Réglage du spécialiste livré (copie littérale de gbm_sacs.REGLAGES["D3L"], égalité testée), passé comme
-# gbm_sacs._ajuster : early_stopping False par défaut écrasé par le réglage, perte squared_error, graine 0.
-D3L = {"max_iter": 6000, "learning_rate": 0.01, "max_leaf_nodes": 15, "min_samples_leaf": 100,
-       "l2_regularization": 3.0, "early_stopping": True, "validation_fraction": 0.1, "n_iter_no_change": 20,
-       "tol": 1e-7}
-REGLAGES = {"recette": PARAMS_B, "d3l": {"early_stopping": False, **D3L, "loss": "squared_error", "random_state": 0}}
 
 
 # ---------------------------------------------------------------- §1 grille, cibles, lecture
@@ -446,16 +439,7 @@ def predire_sacs(modeles, x):
     return np.clip(moyenne(modeles, x), 0, None)
 
 
-def hors_bloc(modeles, x):
-    """Lignes du bloc i prédites par le seul modèle i, bornées à 0."""
-    b = bornes(len(x))
-    sortie = np.empty(len(x))
-    for i, m in enumerate(modeles):
-        sortie[b[i]:b[i + 1]] = np.clip(m.predict(x[b[i]:b[i + 1]]), 0, None)
-    return sortie
-
-
-# ---------------------------------------------------------------- modèle installable (docs/JOURNAL_STRUCTURE.md)
+# ---------------------------------------------------------------- modèle installable (docs/journaux/JOURNAL_STRUCTURE.md)
 
 RACINE = Path(__file__).resolve().parent.parent
 

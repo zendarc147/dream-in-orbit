@@ -1,12 +1,10 @@
 """Variables horaires tirées des contextes bruts (saaf, ltdata, evtf), au lieu du X de prepare.py.
 
-Expériences de docs/JOURNAL_RECETTE.md (points 5 et 6). Aucune consommation n'est lue.
+Expériences de docs/journaux/JOURNAL_RECETTE.md (points 5 et 6). Aucune consommation n'est lue.
 - soleil : cosinus de chaque mesure saaf avant la moyenne horaire (deux angles 0° et 90° :
   moyenne des cosinus 0.5, cosinus de l'angle moyen 0.707), moyennes des angles, écart-type de sa.
   Heures sans mesure : NaN, puis remplissage choisi par l'appelant ;
-- ltdata_lineaire : valeurs journalières (minuit UTC) interpolées au milieu de chaque heure ;
 - geometrie : péricentres aux instants exacts, lus au milieu de l'heure ; altitude approchée ;
-- ombres : fractions horaires d'ombre des lunes et d'occultation ;
 - contacts : fraction de l'heure avec au moins une station (union) et somme des couvertures par station.
 """
 import numpy as np
@@ -18,10 +16,8 @@ H = 3_600_000
 ANGLES = ("sa", "sx", "sy", "sz")
 ALTITUDE_PERICENTRE_KM, ALTITUDE_APOCENTRE_KM = 330.0, 10_100.0
 SOUS_POINTS = 4
-DUREE_MAX_OMBRE_MS = 6 * H     # ombres et occultations : quelques minutes à une heure
+DUREE_MAX_OMBRE_MS = 6 * H     # éclipses : quelques minutes à une heure
 DUREE_MAX_CONTACT_MS = 24 * H  # un passage de station dure moins d'un jour
-OMBRES = ("PHO_UMBRA", "PHO_PENUMBRA", "DEI_UMBRA", "DEI_PENUMBRA", "OCC_PHOBOS", "OCC_DEIMOS", "OCC_MARS",
-          "OCC_MARS_200KM")
 
 
 def soleil(saaf, heures, maintien_ms=60_000):
@@ -47,19 +43,6 @@ def soleil(saaf, heures, maintien_ms=60_000):
     sa = saaf["sa"].to_numpy(dtype=np.float64)
     sortie["saaf_sa_ecart"] = np.sqrt(np.maximum(moyenne(sa ** 2) - sortie["saaf_sa_mean"] ** 2, 0))
     return pd.DataFrame(sortie, index=heures)
-
-
-def interpoler(table):
-    """Interpolation linéaire dans le temps des trous, bords remplis par la valeur la plus proche."""
-    return table.interpolate(method="index", limit_direction="both")
-
-
-def ltdata_lineaire(ltdata, heures):
-    """Colonnes ltdata interpolées linéairement au milieu de chaque heure (bords : valeur la plus proche)."""
-    milieux = np.asarray(heures, dtype=np.float64) + H / 2
-    jours = ltdata.ut_ms.to_numpy(dtype=np.float64)
-    return pd.DataFrame({f"ltdata_{c}": np.interp(milieux, jours, ltdata[c].to_numpy(dtype=np.float64))
-                         for c in ltdata.columns if c != "ut_ms"}, index=heures)
 
 
 def codes(evtf):
@@ -107,19 +90,6 @@ def intervalles(temps, marqueurs, ouverture, fermeture, duree_max_ms):
                 fins.append(t)
             debut = None
     return np.array(debuts, dtype=np.int64), np.array(fins, dtype=np.int64)
-
-
-def ombres(evtf, heures):
-    """Fraction de chaque heure dans chaque intervalle OMBRES (paires START / END)."""
-    heures = np.asarray(heures, dtype=np.int64)
-    c = codes(evtf)
-    sortie = {}
-    for nom in OMBRES:
-        lignes = c.str.fullmatch(f"{nom}_(?:START|END)")
-        d, f = intervalles(evtf.ut_ms[lignes].to_numpy(), c[lignes].str.rsplit("_", n=1).str[1].to_numpy(),
-                           "START", "END", DUREE_MAX_OMBRE_MS)
-        sortie[f"geo_{nom.lower()}_fraction"] = prepare.durees_union(heures, d, f) / 60
-    return pd.DataFrame(sortie, index=heures)
 
 
 def contacts(evtf, heures):

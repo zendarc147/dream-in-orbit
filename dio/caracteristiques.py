@@ -1,4 +1,4 @@
-"""Recette complète « S » des variables (docs/JOURNAL_RECETTE_COMPLETE.md), distincte de prepare.py.
+"""Recette complète « S » des variables (docs/journaux/JOURNAL_RECETTE_COMPLETE.md), distincte de prepare.py.
 
 Tout est calculé à partir des tables brutes (dmop, ftl, evtf, saaf, ltdata) sur une grille horaire : une ligne
 décrit [h, h + 1 h), h = début de l'heure en ms UTC. Aucune consommation n'est lue. Le vocabulaire (familles,
@@ -40,8 +40,7 @@ Les fenêtres et décalages sont calculés par période continue (jamais à trav
 Options (ablations) : saaf « pondere » (moyennes pondérées par la durée, contexte.soleil) ; ltdata « milieu » ;
 histoires « r » (umbra + 0.5 pénombre et somme des flux des faces, formules du boosting R) ; altitude False (ni
 altitude ni ses décalages) ; recence « exacte » (instants exacts en ms au lieu des heures quantifiées) ;
-distance_terre True (garde distance Terre–Mars et angle Soleil–Mars–Terre dans le GBM) ; reintro : blocs du modèle
-actuel ajoutés au GBM (v2r, physiques, orbite, prepare), préfixés old_.
+distance_terre True (garde distance Terre–Mars et angle Soleil–Mars–Terre dans le GBM).
 """
 import re
 from pathlib import Path
@@ -63,7 +62,7 @@ EVENEMENTS = ("MAR_UMBRA", "MAR_PENUMBRA", "OCC_MARS", "OCC_MARS_200KM", "OCC_PH
 DECALAGES = (-3, -2, -1, 1, 2, 3)
 LTDATA_EXCLUES = ("ltdata_earthmars_km", "ltdata_sunmarsearthangle_deg")
 OPTIONS_DEFAUT = {"saaf": "arith", "ltdata": "debut", "histoires": "spec", "altitude": True, "recence": "quantifiee",
-                  "distance_terre": False, "reintro": []}
+                  "distance_terre": False}
 
 
 def dossier_periode(nom):
@@ -297,31 +296,6 @@ def decalages(t, series):
                          for s in series for d in DECALAGES}, index=t.index)
 
 
-# ---------------------------------------------------------------- blocs du modèle actuel (réintroductions)
-
-def reintroductions(tables, heures, t, blocs):
-    from baselines import gbm_sacs
-    from . import variables
-    schema = __import__("dio.donnees", fromlist=["charger_schema"]).charger_schema()
-    x = prepare.remplir_entrees(prepare.construire_entrees(tables, heures, schema), schema)
-    sortie = []
-    if "prepare" in blocs:
-        sortie.append(x)
-    if "v2r" in blocs:
-        v = variables.ajouter_v2r(x)
-        sortie.append(v[[c for c in v.columns if c not in x.columns]])
-    if "physiques" in blocs:
-        ph = variables.physiques(x)
-        sortie.append(ph[[c for c in ph.columns if "_passe" in c]])
-    if "orbite" in blocs:
-        phase = np.arctan2(t["geo_phase_sin"].to_numpy(), t["geo_phase_cos"].to_numpy())
-        sortie.append(pd.DataFrame({f"orbite_{f}{k}": getattr(np, f)(k * phase) for k in (2, 3, 4)
-                                    for f in ("cos", "sin")}, index=x.index))
-        sortie.append(gbm_sacs.moyennes_exponentielles(x, gbm_sacs.CONSTANTES_LENTES,
-                                                        lambda nom: nom == "ombre" or nom.endswith("_eclaire")))
-    return pd.concat(sortie, axis=1).add_prefix("old_").set_axis(t.index)
-
-
 # ---------------------------------------------------------------- assemblage
 
 def construire(tables, heures, vocab, options=None):
@@ -344,15 +318,12 @@ def construire(tables, heures, vocab, options=None):
     if o["altitude"]:
         series.append("geo_log_altitude")
     t = pd.concat([t, decalages(t, series)], axis=1)
-    if o["reintro"]:
-        t = pd.concat([t, reintroductions(tables, heures, t, o["reintro"])], axis=1)
     if not np.isfinite(t.to_numpy(dtype=np.float64)).all():
         raise ValueError("Variables non finies : " + ", ".join(t.columns[~np.isfinite(t.to_numpy(float)).all(axis=0)]))
     return t
 
 
-GRU_EXCLUS = re.compile(r"cmd_(pre_.*|total_n|fam_.*_(recence|futur\d+h)|chg_.*|paire_.*)|flux_.*|th_.*|.*_dec[+-]\dh"
-                        r"|old_.*")
+GRU_EXCLUS = re.compile(r"cmd_(pre_.*|total_n|fam_.*_(recence|futur\d+h)|chg_.*|paire_.*)|flux_.*|th_.*|.*_dec[+-]\dh")
 
 
 def colonnes_gru(table):
