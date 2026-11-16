@@ -9,7 +9,7 @@
     "recette_depuis": "poids/recette",
     "part_recette": 1.0
   },
-  "note": "Structure T3 (10 graines), installée à la demande de l'utilisateur le 16 novembre 2026 alors que la règle écrite avant mesure l'avait refusée (docs/JOURNAL_STRUCTURE.md) : 0.5 × GRU S borné (recette/, graines 0–9 fusionnées) + 0.5 × boosting S (gbm/, recalé) ; NPWD2551 : recette B seule dans la part boosting (specialiste/b_NPWD2551/) ; NPWD2532 et NPWD2531 : spécialistes du livré. Aucun GRU mixte. Précédents : C1 dans poids_candidats/structure/C1_g5/, livré L dans poids_repli/.",
+  "note": "Structure S2 (docs/JOURNAL_GRU_BOUCLE.md), installée le 16 novembre 2026 par la règle écrite avant mesure (orientation imposée par l'utilisateur : second GRU à boucle) : part réseau = 0.5 × GRU S borné (recette/, G0, graines 0–9, recalé sur power_init) + 0.5 × GRU à boucle (recette2/, GB : réinjection, premier segment vérité, normalisation standard, sans recalage, graines 0–9) ; part boosting de T3 : boosting S (gbm/, recalé), NPWD2551 : recette B seule (specialiste/b_NPWD2551/) ; mélange 0.5 / 0.5 ; spécialistes NPWD2532 et NPWD2531 du livré. Précédents : T3 dans poids_candidats/structure/T3_g10/, C1 dans poids_candidats/structure/C1_g5/, livré L dans poids_repli/.",
   "options_recette": {
     "variables": "S",
     "reinjection": false,
@@ -34,5 +34,24 @@
     "embargo_h": 0,
     "filtre": false,
     "compresser": true
-  }
+  },
+  "options_recette2": {
+    "variables": "S",
+    "reinjection": true,
+    "premier_segment_verite": true,
+    "normalisation": "standard",
+    "graines": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  "recalage_recette2": 0.0
 }

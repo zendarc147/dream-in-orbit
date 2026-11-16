@@ -1,4 +1,6 @@
 {
   "poids_gbm": 0.5,
-  "part_recette": 1.0
+  "part_recette": 1.0,
+  "recette2": 0.5,
+  "recalage_recette2": 0.0
 }

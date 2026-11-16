@@ -283,7 +283,7 @@ def tableaux(r):
                     parts_ = []
                     for sel in (COUPURES, ["directe"], ["inverse"]):
                         xs = [r[groupe].get(f"{n}_{v}") for v in sel]
-                        parts_.append(f"{np.mean([x['circuits'][c][k]['biais'] for x in xs]):+.4f}" if None not in xs else "—")
+                        parts_.append(f"{np.nanmean([x['circuits'][c][k]['biais'] for x in xs]):+.4f}" if None not in xs else "—")
                     cel.append(" ; ".join(parts_))
             L.append(f"| {n} | " + " | ".join(cel) + " |")
     L += ["", "### Diagnostics de réglage (RMSE globale ; Δ négatif = le réglage aide)", "",

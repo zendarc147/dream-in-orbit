@@ -25,15 +25,26 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + poids du boosting 0.5 au lieu de 0.3 ; GRU principal sans encodages par lettre de variante | 0.0751 | 0.0785 | 0.0768 |
 | + boosting propre à NPWD2551 (D3L, variables d'orbite), livré jusqu'au 15 novembre (`poids_repli/`) | 0.0750 | 0.0785 | 0.0767 |
 | Structure C1 : GRU recette remplacé par un GRU S borné (165 entrées au lieu de 236), moitié de la part GRU, installée le 16 novembre au matin (`poids_candidats/structure/C1_g5/`) | 0.0744 | 0.0782 | 0.0763 |
-| **Structure T3 : GRU S borné seul (10 graines), boosting S, recette B pour NPWD2551, sans GRU mixte, modèle final (décision de l'utilisateur)** | **0.0746** | **0.0804** | **0.0775** |
+| Structure T3 : GRU S borné seul (10 graines), boosting S, recette B pour NPWD2551, sans GRU mixte (décision de l'utilisateur, 16 novembre) | 0.0746 | 0.0804 | 0.0775 |
+| **Structure S2 : T3 + GRU à boucle (réinjection de sa sortie, normalisation standard, sans recalage) à moitié dans la part réseau, modèle final (décision de l'utilisateur)** | **0.0746** | **0.0805** | **0.0775** |
 
-**Modèle final : structure T3, installée à la demande de l'utilisateur** alors que la règle écrite avant mesure la
-refusait (`docs/JOURNAL_STRUCTURE.md`, « Installation de T3 »). 0.5 × GRU S borné (10 graines) + 0.5 × boosting S
-(recalé) ; NPWD2551 : recette B seule dans la part boosting ; mêmes spécialistes NPWD2532 et NPWD2531. **Part du
-réseau : 0.5 du mélange** (NPWD2532 : 0.4). Moyenne des 4 RMSE : 0.077525 (+0.0008 sur le livré L, +0.0012 sur C1) ;
+**Modèle final : structure S2** (`docs/JOURNAL_GRU_BOUCLE.md`). Second GRU à boucle ajouté sur décision de
+l'utilisateur ; ce choix ne maximise pas la validation interne. Part réseau = 0.5 × GRU S borné (G0, 10 graines,
+recalé sur power_init) + 0.5 × GRU à boucle (GB, 10 graines : il relit sa propre prédiction, scheduled sampling
+jusqu'à p = 0, premier segment avec la vérité, normalisation standard, aucun recalage : les 7 jours réels ne font
+que réchauffer son état). Part boosting de T3 : boosting S (recalé), recette B seule pour NPWD2551. Mêmes spécialistes
+NPWD2532 et NPWD2531. **Part du réseau : 0.5 du mélange, partagée entre deux GRU** (NPWD2532 : 0.4).
+S2 a été installé par une règle écrite avant mesure, qui ne le refusait qu'en cas d'échec technique. Contre T3 :
+moyenne directe / inverse 0.077534 (+0.000009, égal au bruit près), moyenne des coupures glissantes 0.073709
+(−0.000449), c87 −0.0021, c62 −0.0006, c50 +0.0007, c75 +0.0003. Le livré L (`poids_repli/`, 0.076735) et C1
+restent meilleurs sur directe / inverse. T3 est gardé dans `poids_candidats/structure/T3_g10/`, S1 et S2 avec un
+poids boosting de 0.6 dans `poids_candidats/gru_boucle/`.
+
+Structure T3 (16 novembre, installée à la demande de l'utilisateur alors que la règle écrite avant mesure la
+refusait, `docs/JOURNAL_STRUCTURE.md`) : 0.5 × GRU S borné (10 graines) + 0.5 × boosting S (recalé) ; NPWD2551 :
+recette B seule dans la part boosting. Moyenne des 4 RMSE : 0.077525 (+0.0008 sur le livré L, +0.0012 sur C1) ;
 moyenne des coupures glissantes 0.074158 (+0.0023 sur L), c87 +0.0084. Plus sobre (aucun GRU mixte, 3 000 arbres
-pour NPWD2551 au lieu de 26 198) et environ deux fois plus rapide en prédiction. C1 est gardé dans
-`poids_candidats/structure/C1_g5/`, le livré L dans `poids_repli/`.
+pour NPWD2551 au lieu de 26 198) et environ deux fois plus rapide en prédiction.
 
 Structure C1 (choisie par la règle, remplacée par T3) : sobriété sur décision de l'utilisateur ; elle ne maximise pas la validation interne.
 C1 (16 novembre, `docs/JOURNAL_STRUCTURE.md`) : 0.5 × (0.5 GRU mixte + 0.5 GRU S borné) + 0.5 × boosting R,
@@ -53,7 +64,7 @@ corrige une correction apprise trop faible. Graines 5–9 : 0.0787 / 0.0843. Gai
 directions et sur plusieurs circuits ; NPWD2532 se dégrade. Détail, critères et limites dans
 `docs/RESULTATS.md`, section « Généralisation d'une année à l'autre ».
 
-Le modèle du 11 novembre était un ensemble : 0.7 × world model GRU + 0.3 × boosting à sacs temporels (depuis le 12 novembre : 0.5 × GRU, dont 30 % de GRU recette, + 0.5 × boosting recette ; depuis le 16 novembre, le GRU recette est un GRU S borné et pèse 50 % de la part GRU)
+Le modèle du 11 novembre était un ensemble : 0.7 × world model GRU + 0.3 × boosting à sacs temporels (depuis le 12 novembre : 0.5 × GRU, dont 30 % de GRU recette, + 0.5 × boosting recette ; depuis le 16 novembre, le GRU recette est un GRU S borné et pèse 50 % de la part GRU ; structure S2 : la part GRU est faite de deux GRU recette, le GRU S borné et un GRU à boucle, à parts égales)
 (un HistGradientBoosting par circuit, 5 sacs). Le boosting, sans mémoire, reçoit en plus des
 variables du GRU les commandes planifiées par famille (heures depuis la dernière, comptes dans
 l'heure et les six heures suivantes, périodes début/fin appariées) et des moyennes

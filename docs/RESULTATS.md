@@ -807,3 +807,27 @@ des 4 : 0.076288) ; il est moins bon que le livré sur c75 (+0.0015) et c87 (+0.
 au-dessus du bruit des coupures (0.0001 à 0.0004) : le journal signale ce seuil comme trop large, sans le changer.
 Structure choisie pour sa sobriété sur décision de l'utilisateur ; elle ne maximise pas la validation interne.
 Part du réseau : 0.5 du mélange. Poids de tous les candidats : `poids_candidats/structure/INDEX.md`.
+
+Installation de T3 (même jour, décision de l'utilisateur, refusé par la règle) : moyenne des 4 RMSE 0.077525,
+moyenne des coupures 0.074158 (`docs/JOURNAL_STRUCTURE.md`, « Installation de T3 »).
+
+## Second GRU à boucle dans la part réseau — 16 novembre 2026
+
+Détail : `docs/JOURNAL_GRU_BOUCLE.md`. Orientation imposée par l'utilisateur : la part réseau contient deux GRU de
+natures différentes, le GRU S borné de T3 (G0) et un GRU qui relit sa propre prédiction (GB : réinjection,
+scheduled sampling jusqu'à p = 0, premier segment avec la vérité, normalisation standard, aucun recalage). Liste
+fermée et règle écrites avant mesure ; S2 installé sauf échec technique. Entraînements sur Kaggle T4 (`zendarc147`),
+10 graines par GRU, réentraînés dans chaque coupure. Scores de bout en bout :
+
+| Structure | Directe | Inverse | Moy. | c50 | c62 | c75 | c87 | Moy. coupures |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| S0 = T3 (G0 seul) | 0.074604 | 0.080447 | 0.077525 | 0.064210 | 0.063848 | 0.092209 | 0.076363 | 0.074158 |
+| S1 (GB seul) | 0.074752 | 0.080938 | 0.077845 | 0.065801 | 0.062705 | 0.093110 | 0.073420 | 0.073759 |
+| **S2 (0.5 G0 + 0.5 GB), installé** | **0.074572** | **0.080497** | **0.077534** | **0.064867** | **0.063204** | **0.092547** | **0.074218** | **0.073709** |
+| S2, boosting 0.6 (rapport, non installé) | 0.074741 | 0.080391 | 0.077566 | 0.065561 | 0.065096 | 0.091784 | 0.072417 | 0.073714 |
+
+S2 contre S0 : égal sur directe / inverse (+0.000009), meilleur en moyenne des coupures (−0.000449), surtout sur c87
+(−0.0021 ; part réseau 0.0945 → 0.0900, biais de NPWD2551 +0.144 → +0.117). Corrélation des erreurs G0 / GB 0.90 à
+0.98 (NPWD2551 c87 : 0.87). En régime haut hors saison, NPWD2551 est un peu plus sous-estimé (biais moyen des coupures
+−0.089 → −0.099). Second GRU à boucle ajouté sur décision de l'utilisateur ; ce choix ne maximise pas la validation
+interne (le livré L et C1 restent meilleurs sur directe / inverse). Part du réseau : 0.5 du mélange, deux GRU.

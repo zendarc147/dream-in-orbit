@@ -70,6 +70,18 @@ class EnsembleTest(unittest.TestCase):
         np.testing.assert_allclose(gru, (1 - a) * mixte + a * recette, atol=1e-9)
         self.assertGreater(np.abs(mixte - recette).to_numpy().max(), 1e-3)
 
+    @unittest.skipUnless(json.loads((POIDS / "ensemble.json").read_text()).get("recette2") if EST_ENSEMBLE else False,
+                         "pas de second GRU recette")
+    def test_part_gru_deux_gru_recette(self):
+        w = json.loads((POIDS / "ensemble.json").read_text())["recette2"]
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "p.csv"
+            ensemble.predire(TEST, out, POIDS, parts=True)
+            p = {k: pd.read_csv(Path(str(out) + ".parts") / f"{k}.csv", index_col=0)
+                 for k in ("gru", "gru_recette", "gru_recette2")}
+        np.testing.assert_allclose(p["gru"], (1 - w) * p["gru_recette"] + w * p["gru_recette2"], atol=1e-9)
+        self.assertGreater(np.abs(p["gru_recette"] - p["gru_recette2"]).to_numpy().max(), 1e-3)
+
     @unittest.skipUnless((POIDS / "specialiste" / "specialistes.json").is_file(), "pas de spécialistes")
     def test_specialistes_ne_changent_que_leurs_colonnes(self):
         seul = predire(TEST, self.temp.name, specialistes=False).set_index("ut_ms")
