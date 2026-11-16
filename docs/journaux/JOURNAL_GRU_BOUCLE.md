@@ -448,3 +448,18 @@ de chaque validation (`runs/st_T3_<v>_g10`) viennent de `outils/structure.py ass
 `predict.py` → `evaluate.py` relancés sur les six dossiers S2 (`runs/gb_S2_<v>/<v>/pred_verif.csv`) : directe
 0.074572, inverse 0.080497, c50 0.064867, c62 0.063204, c75 0.092547, c87 0.074218, identiques aux scores annoncés ;
 les six fichiers de prédiction sont identiques au bit près aux `pred.csv` de la mesure.
+
+## Réentraînement par `train.py` (17 novembre 2026)
+
+Après le nettoyage (`c3b4dc8`), `train.py` entraîne S2 en un seul appel. Demande de l'utilisateur : lancer
+`python train.py` et remplacer `poids/` par sa sortie.
+
+- Kaggle `zendarc147`, T4 : `outils/lancer_kaggle.py -- train.py --out runs/train_complet`, 4936 s.
+- Prédictions `predict.py` du nouveau et de l'ancien `poids/` sur `validation/test` et `validation_inverse/test` :
+  final et composants (GRU S, GRU à boucle, part réseau, boosting, mélange) **identiques à l'octet près**.
+- Poids : `recette/`, `recette2/`, recette B, marqueurs identiques à l'octet près. Le world model physique a les
+  mêmes 137 tenseurs (écart max 0.0) ; seule sa `config` perd quatre clés d'options retirées au nettoyage. Le
+  boosting perd la clé `perte`. Les graines 0–9 en un appel redonnent donc la fusion 0–4 + 5–9.
+- `poids/` = sortie de ce `train.py` ; ancien `poids/` dans `poids_candidats/assemblage_s2/` (`INDEX.md`).
+  La remarque de la section « Installation (S2) » (« `train.py` ne reproduit pas la structure installée ») ne vaut
+  plus.

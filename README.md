@@ -96,7 +96,9 @@ python train.py
 ```
 
 Entraîne le modèle final sur annee1 + annee2 et écrit `poids/` : les deux GRU, le world model physique, les
-boostings et la porte de NPWD2531. Le code utilise CUDA s'il est disponible. Sur CPU, l'entraînement des
+boostings et la porte de NPWD2531. Les poids livrés dans `poids/` sortent d'un seul `python train.py` (Kaggle T4, 82 min) ;
+ils donnent les mêmes prédictions, à l'octet près, que l'ancien assemblage de S2 (`poids_candidats/assemblage_s2/INDEX.md`).
+Le code utilise CUDA s'il est disponible. Sur CPU, l'entraînement des
 réseaux prend des heures. Pour ne refaire que les boostings, en gardant les réseaux déjà entraînés :
 
 ```bash
