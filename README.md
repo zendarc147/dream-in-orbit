@@ -3,7 +3,8 @@
 Des réseaux de neurones récurrents apprennent comment le satellite réagit à son planning (commandes dmop,
 modes de pointage ftl) et à son contexte (Soleil saaf, événements evtf, tendances ltdata). À partir de ses
 7 premiers jours réels (`power_init.csv`), le modèle simule seul ses 33 circuits heure par heure sur toute
-la période. Sujet : [`docs/sujet.md`](docs/sujet.md).
+la période. Sujet : [`docs/sujet.md`](docs/sujet.md). Rapport final :
+[`docs/rapport/rapport_final_2026.pdf`](docs/rapport/rapport_final_2026.pdf).
 
 ## Modèle final (structure S2)
 
@@ -161,7 +162,8 @@ outils/                      validation, ablations, démo, coupures chronologiqu
 tests/                       tests unitaires (tests/controles/ : empreintes de contrôle de la recette B)
 poids/                       poids du modèle final
 data/                        kit (annee1, annee2) et données horaires préparées
-docs/                        sujet, résultats, ablations, journaux, rapports d'étape, exploration, démo
+docs/                        sujet, rapport final et rapports d'étape (rapport/), résultats, ablations,
+                             journaux, exploration, démo
 ```
 
 Les variantes testées puis écartées sont décrites dans `docs/RESULTATS.md` et `docs/journaux/`. Leur code
