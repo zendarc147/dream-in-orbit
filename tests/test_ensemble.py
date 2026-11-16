@@ -61,6 +61,7 @@ class EnsembleTest(unittest.TestCase):
 
     @unittest.skipUnless(json.loads((POIDS / "ensemble.json").read_text()).get("part_recette") if EST_ENSEMBLE else False,
                          "pas de GRU recette")
+    @unittest.skipUnless((POIDS / "membres.json").is_file(), "pas de GRU mixte (structure T3 : GRU recette seul)")
     def test_part_gru_melange_mixte_et_recette(self):
         a = json.loads((POIDS / "ensemble.json").read_text())["part_recette"]
         gru = predire(TEST, self.temp.name, poids_gbm=0).set_index("ut_ms")

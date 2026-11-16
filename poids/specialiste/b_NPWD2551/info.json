@@ -1,0 +1,16 @@
+{
+ "annees":[
+  "annee1",
+  "annee2"
+ ],
+ "lignes":32976,
+ "colonnes":846,
+ "masque_lignes":32698,
+ "iterations":[
+  600,
+  600,
+  600,
+  600,
+  600
+ ]
+}

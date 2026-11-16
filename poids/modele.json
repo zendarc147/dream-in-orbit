@@ -5,30 +5,11 @@
     "annee2"
   ],
   "options": {
-    "gru_depuis": "poids",
     "physique_depuis": "poids/specialiste/physique",
-    "recette_depuis": "poids/recette"
+    "recette_depuis": "poids/recette",
+    "part_recette": 1.0
   },
-  "options_gru_mixte": {
-    "masque_saaf": 0.1,
-    "borne_niveau_prediction": 10.0,
-    "familles": true,
-    "facteur_niveau_prediction": 1.5,
-    "commandes": null,
-    "branche_commandes": null,
-    "familles_variante": true,
-    "retirer": [
-      "dmop_(?!other_count|total_count)\\w+_count"
-    ],
-    "graines": [
-      0,
-      1,
-      2,
-      3,
-      4
-    ]
-  },
-  "note": "GRU mixte (membre0/1) entraîné à part par train.py --modele gru_mixte avec options_gru_mixte (docs/JOURNAL_RECETTE.md), puis repris par gru_depuis ; GRU recette (recette/) = GRU S borné, train.py --modele gru_recette --options options_recette, repris par recette_depuis (structure C1, docs/JOURNAL_STRUCTURE.md). Livré précédent : poids_repli/.",
+  "note": "Structure T3 (10 graines), installée à la demande de l'utilisateur le 16 novembre 2026 alors que la règle écrite avant mesure l'avait refusée (docs/JOURNAL_STRUCTURE.md) : 0.5 × GRU S borné (recette/, graines 0–9 fusionnées) + 0.5 × boosting S (gbm/, recalé) ; NPWD2551 : recette B seule dans la part boosting (specialiste/b_NPWD2551/) ; NPWD2532 et NPWD2531 : spécialistes du livré. Aucun GRU mixte. Précédents : C1 dans poids_candidats/structure/C1_g5/, livré L dans poids_repli/.",
   "options_recette": {
     "variables": "S",
     "reinjection": false,
@@ -38,7 +19,20 @@
       1,
       2,
       3,
-      4
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
     ]
+  },
+  "options_gbm": {
+    "config": "D",
+    "jeu": "S",
+    "sacs": 5,
+    "embargo_h": 0,
+    "filtre": false,
+    "compresser": true
   }
 }

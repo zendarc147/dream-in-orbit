@@ -10,7 +10,8 @@ existants, scores, tests.
 
 - Sessions Kaggle : `runs/st_S{1,2,3,4}.log` / `.pid` (attente par `kill -0 PID`), commandes `runs/st_kaggle.py`,
   lanceur `runs/st_lancer.sh SESSION FENTE`.
-- Statut (16 novembre 2026, matin) : programme terminé. **C1 installé** par la règle (premier admissible dans l'ordre
+- Statut (16 novembre 2026) : **T3 (10 graines) installé à la demande de l'utilisateur** (section « Installation de
+  T3 ») ; auparavant, C1 installé par la règle (premier admissible dans l'ordre
   de sobriété) ; livré précédent dans `poids_repli/` ; poids finaux de tous les candidats dans
   `poids_candidats/structure/`.
 
@@ -364,3 +365,21 @@ python outils/structure.py finaux
   occurrence.
 - Les poids finaux du GRU S n'ont pas de score propre : la règle a été appliquée sur les coupures, puis la structure a
   été réentraînée sur annee1 + annee2.
+
+## Installation de T3 (décision de l'utilisateur, 16 novembre 2026)
+
+L'utilisateur a demandé d'installer T3 comme modèle principal. Ce n'est pas un résultat de la règle : T3 y était
+refusé (une des 4 RMSE, moyenne des coupures, c87). Variante prise : **T3 à 10 graines, avec recalage** de la part
+boosting (`poids_candidats/structure/T3_g10/`), première variante de T3 dans l'ordre de sobriété fixé avant mesure
+(10 graines avant 5 ; T3sr est une autre ligne de la liste).
+
+- `poids/` = copie indépendante (sans liens durs) de `poids_candidats/structure/T3_g10/` : `recette/recette.pt`
+  (GRU S borné, graines 0–9, `runs/st_final_gruS_*` fusionnés), `gbm/` (boosting S), `specialiste/b_NPWD2551/`
+  (recette B), physique et marqueurs du livré ; `ensemble.json` : `part_recette` 1.0. Plus de GRU mixte
+  (`membre0/1`) ni de `gbm_NPWD2551/`. `poids/modele.json` : note, `options_recette`, `options_gbm`.
+- C1 reste dans `poids_candidats/structure/C1_g5/` (vérifié identique à l'ancien `poids/`, fichier par fichier), le
+  livré L dans `poids_repli/`.
+- Scores connus (aucune nouvelle mesure) : moyenne des 4 RMSE 0.077525 (directe 0.074604, inverse 0.080447) ;
+  coupures c50–c87 0.064210 / 0.063848 / 0.092209 / 0.076363, moyenne 0.074158.
+- `dio/ensemble.py` n'est pas modifié : `train.py --modele gru_gbm` reproduit toujours C1. Le GRU S à 10 graines est
+  une fusion de deux entraînements (`outils/fusionner_recette.py`), que `train.py` ne fait pas seul.

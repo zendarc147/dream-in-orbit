@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 
 RACINE = Path(__file__).resolve().parent.parent
-UTILISATEUR = "zendarc148"
+UTILISATEUR = "zendarc147"
 DATASET = f"{UTILISATEUR}/dream-in-orbit-code"
 NOYAU = f"{UTILISATEUR}/dream-in-orbit"
 INUTILES = ("docs/",)
@@ -99,7 +99,7 @@ def pousser_noyau(dossier, commande, gpu=True):
     paquet = io.BytesIO()
     with tarfile.open(fileobj=paquet, mode="w:gz") as tar:
         for f in fichiers_depot():
-            if not f.startswith(DONNEES + ("poids/", "poids_candidats/")):
+            if not f.startswith(DONNEES + ("poids/", "poids_candidats/", "poids_repli/")):
                 tar.add(RACINE / f, arcname=f)
         contenu = json.dumps(commande).encode()
         info = tarfile.TarInfo("kaggle_commande.json")

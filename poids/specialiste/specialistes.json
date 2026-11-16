@@ -7,20 +7,6 @@
     "porte": "marqueurs"
   },
   "NPWD2551": {
-    "gbm_specialiste": {
-      "config": "D3L",
-      "ajouts": [
-        "planning",
-        "ema",
-        "geometrie",
-        "altitude",
-        "ombres",
-        "contacts",
-        "decalages",
-        "histoires",
-        "face_sa_moins",
-        "orbite"
-      ]
-    }
+    "recette_b": 1.0
   }
 }

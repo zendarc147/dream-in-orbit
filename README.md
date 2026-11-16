@@ -24,10 +24,19 @@ Scores et historique des essais : [`docs/RESULTATS.md`](docs/RESULTATS.md). Abla
 | + boosting « recette » (familles corrigées, événements de commande, géométrie exacte, décalages, réglage avec arrêt anticipé) et GRU recette à 0.3 dans la part GRU | 0.0753 | 0.0787 | 0.0770 |
 | + poids du boosting 0.5 au lieu de 0.3 ; GRU principal sans encodages par lettre de variante | 0.0751 | 0.0785 | 0.0768 |
 | + boosting propre à NPWD2551 (D3L, variables d'orbite), livré jusqu'au 15 novembre (`poids_repli/`) | 0.0750 | 0.0785 | 0.0767 |
-| **Structure C1 : GRU recette remplacé par un GRU S borné (165 entrées au lieu de 236), moitié de la part GRU, modèle final** | **0.0744** | **0.0782** | **0.0763** |
+| Structure C1 : GRU recette remplacé par un GRU S borné (165 entrées au lieu de 236), moitié de la part GRU, installée le 16 novembre au matin (`poids_candidats/structure/C1_g5/`) | 0.0744 | 0.0782 | 0.0763 |
+| **Structure T3 : GRU S borné seul (10 graines), boosting S, recette B pour NPWD2551, sans GRU mixte, modèle final (décision de l'utilisateur)** | **0.0746** | **0.0804** | **0.0775** |
 
-Structure choisie pour sa sobriété sur décision de l'utilisateur ; elle ne maximise pas la validation interne.
-Modèle final (16 novembre, `docs/JOURNAL_STRUCTURE.md`) : 0.5 × (0.5 GRU mixte + 0.5 GRU S borné) + 0.5 × boosting R,
+**Modèle final : structure T3, installée à la demande de l'utilisateur** alors que la règle écrite avant mesure la
+refusait (`docs/JOURNAL_STRUCTURE.md`, « Installation de T3 »). 0.5 × GRU S borné (10 graines) + 0.5 × boosting S
+(recalé) ; NPWD2551 : recette B seule dans la part boosting ; mêmes spécialistes NPWD2532 et NPWD2531. **Part du
+réseau : 0.5 du mélange** (NPWD2532 : 0.4). Moyenne des 4 RMSE : 0.077525 (+0.0008 sur le livré L, +0.0012 sur C1) ;
+moyenne des coupures glissantes 0.074158 (+0.0023 sur L), c87 +0.0084. Plus sobre (aucun GRU mixte, 3 000 arbres
+pour NPWD2551 au lieu de 26 198) et environ deux fois plus rapide en prédiction. C1 est gardé dans
+`poids_candidats/structure/C1_g5/`, le livré L dans `poids_repli/`.
+
+Structure C1 (choisie par la règle, remplacée par T3) : sobriété sur décision de l'utilisateur ; elle ne maximise pas la validation interne.
+C1 (16 novembre, `docs/JOURNAL_STRUCTURE.md`) : 0.5 × (0.5 GRU mixte + 0.5 GRU S borné) + 0.5 × boosting R,
 mêmes spécialistes. **Part du réseau : 0.5 du mélange** (NPWD2532 : 0.4). Moyenne des 4 RMSE (directe, inverse,
 graines 0–4 et 5–9) : 0.076288 contre 0.076735 pour le livré précédent. Sur la validation à origine glissante (quatre
 coupures, réentraînement à chaque coupure), C1 fait mieux sur les deux premières coupures et moins bien sur les deux
