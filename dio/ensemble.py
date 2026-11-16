@@ -16,6 +16,8 @@ Les 30 autres colonnes ne changent pas. Retour à l'ensemble seul : --options '{
 
 GRU recette (dio/recette.py, sans réinjection, recalé sur power_init), dans recette/ si part_recette > 0 :
 la part GRU devient (1 - part_recette) × GRU mixte + part_recette × GRU recette (docs/JOURNAL_RECETTE.md).
+Second GRU recette dans recette2/ si ensemble.json porte "recette2" (poids dans la part GRU) et
+"recalage_recette2" (défaut 0) : GRU à boucle de docs/JOURNAL_GRU_BOUCLE.md.
 """
 import json
 import shutil
@@ -111,16 +113,27 @@ def predire(test_dir, out, dossier, poids_gbm=None, sortie_incertitude=None, rec
         poids_gbm = reglages["poids_gbm"]
     if part_recette is None:
         part_recette = reglages.get("part_recette", 0.0)
-    temps = {}
+    # Second GRU recette (recette2/, docs/JOURNAL_GRU_BOUCLE.md) : poids "recette2" dans la part réseau, recalage
+    # "recalage_recette2" (0 par défaut) ; absent : rien ne change. recette2 = 1 : recette/ n'est pas lu.
+    part2, recalage2 = reglages.get("recette2", 0.0), reglages.get("recalage_recette2", 0.0)
+    temps, composants_gru = {}, {}
     debut = time.time()
-    gru = mixte.predire(test_dir, out, dossier, sortie_incertitude) if part_recette != 1 else None
+    gru = mixte.predire(test_dir, out, dossier, sortie_incertitude) if part_recette != 1 and part2 != 1 else None
     temps["gru_mixte"] = time.time() - debut
-    if part_recette:
+    if part_recette and part2 != 1:
         debut = time.time()
         with tempfile.TemporaryDirectory() as temp:
             autre = recette.predire(test_dir, Path(temp) / "recette.csv", dossier / "recette", recalage=1.0)
         gru = autre if gru is None else (1 - part_recette) * gru + part_recette * autre
+        composants_gru["gru_recette"] = autre
         temps["gru_recette"] = time.time() - debut
+    if part2:
+        debut = time.time()
+        with tempfile.TemporaryDirectory() as temp:
+            autre = recette.predire(test_dir, Path(temp) / "recette2.csv", dossier / "recette2", recalage=recalage2)
+        gru = autre if gru is None or part2 == 1 else (1 - part2) * gru + part2 * autre
+        composants_gru["gru_recette2"] = autre
+        temps["gru_recette2"] = time.time() - debut
     if not poids_gbm:
         return donnees.ecrire_predictions(gru.index.to_numpy(), np.clip(gru.to_numpy(), 0, None), gru.index.to_numpy(),
                                           list(gru.columns), out)
@@ -148,7 +161,7 @@ def predire(test_dir, out, dossier, poids_gbm=None, sortie_incertitude=None, rec
     if parts:
         sortie = Path(str(out) + ".parts")
         sortie.mkdir(parents=True, exist_ok=True)
-        for nom, t in (("gru", gru), ("gbm", gbm), ("melange", brut)):
+        for nom, t in (("gru", gru), ("gbm", gbm), ("melange", brut), *(composants_gru.items() if part2 else ())):
             t.to_csv(sortie / f"{nom}.csv")
         (sortie / "temps.json").write_text(json.dumps({k: round(v, 1) for k, v in temps.items()}, indent=1) + "\n")
     return donnees.ecrire_predictions(melange.index.to_numpy(), np.clip(melange.to_numpy(), 0, None),

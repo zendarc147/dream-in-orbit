@@ -42,6 +42,9 @@ def main():
     ap.add_argument("--b", help="recette B de NPWD2551 (modele_b.pkl.xz)")
     ap.add_argument("--part-b", type=float, default=1.0)
     ap.add_argument("--part", type=float)
+    ap.add_argument("--recette2", help="second GRU recette (recette2/, docs/JOURNAL_GRU_BOUCLE.md)")
+    ap.add_argument("--part2", type=float, default=0.5, help="poids du second GRU dans la part GRU (1 : seul)")
+    ap.add_argument("--recalage2", type=float, help="recalage du second GRU (défaut de dio/ensemble.py : 0)")
     ap.add_argument("--poids", type=float)
     ap.add_argument("--sans-specialiste", nargs="*", default=[], help="circuits dont la règle spécialiste est retirée")
     a = ap.parse_args()
@@ -74,6 +77,14 @@ def main():
             reglages["poids_gbm"] = a.poids
         if a.gbm2:
             reglages["gbm2"] = a.poids_gbm2
+        if a.recette2:
+            (cible / "recette2").mkdir(exist_ok=True)
+            os.link(source(a.recette2, d) / "recette.pt", cible / "recette2" / "recette.pt")
+            reglages["recette2"] = a.part2
+            if a.recalage2 is not None:
+                reglages["recalage_recette2"] = a.recalage2
+            if a.part2 == 1:  # premier GRU recette non lu
+                shutil.rmtree(cible / "recette", ignore_errors=True)
         (cible / "ensemble.json").unlink()  # lien dur : ne jamais écrire dans le fichier de la base
         (cible / "ensemble.json").write_text(json.dumps(reglages, indent=2) + "\n")
         if a.part == 1:  # GRU mixte non lu : retiré du dossier pour que la structure se voie
